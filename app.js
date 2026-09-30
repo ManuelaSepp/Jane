@@ -128,6 +128,25 @@ function renderFahrzielDropdown(){
   if([...fahrziel.options].some(o=>o.value===wert))fahrziel.value=wert;
   renderFahrtInfo();
 }
+function aktuellerFahrzielName(fahrzielId,fallback=""){
+  const id=String(fahrzielId||"");
+  if(!id)return String(fallback||"");
+  const z=state.fahrziele.find(x=>String(x.id||"")===id);
+  return z?String(z.name||fallback||""):String(fallback||"");
+}
+function aktualisiereFahrzielNamen(){
+  state.jahresEintraege.forEach(e=>{
+    if(Array.isArray(e.fahrten)&&e.fahrten.length){
+      e.fahrten=e.fahrten.map(f=>({
+        ...f,
+        fahrziel:aktuellerFahrzielName(f.fahrzielId,f.fahrziel)
+      }));
+      e.fahrziel=e.fahrten.map(f=>f.fahrziel).filter(Boolean).join(" · ");
+    }else if(e.fahrzielId){
+      e.fahrziel=aktuellerFahrzielName(e.fahrzielId,e.fahrziel);
+    }
+  });
+}
 function fahrtHinzufuegen(){
   const z=gewaehltesZiel();
   if(!z)return;
@@ -222,6 +241,7 @@ async function ladeJahr(jahr){
       bezahlt:e.bezahlt===true||String(e.bezahlt).toLowerCase()==="true"
     }));
     state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
+    aktualisiereFahrzielNamen();
     state.stundenloehne=(Array.isArray(r.stundenloehne)?r.stundenloehne:[])
       .map(x=>({ab:String(x.ab||""),lohn:Number(x.lohn||0)}))
       .filter(x=>/^\d{4}-\d{2}$/.test(x.ab)&&x.lohn>0)
@@ -329,12 +349,12 @@ function eintragLaden(e){
   state.aktuelleFahrten=Array.isArray(e.fahrten)?e.fahrten.map(f=>({
     id:String(f.id||""),
     fahrzielId:String(f.fahrzielId||""),
-    fahrziel:String(f.fahrziel||""),
+    fahrziel:aktuellerFahrzielName(f.fahrzielId,f.fahrziel),
     kilometer:Number(f.kilometer||0)
   })):(e.fahrziel&&Number(e.kilometer||0)>0?[{
     id:"legacy_"+e.datum,
     fahrzielId:String(e.fahrzielId||""),
-    fahrziel:String(e.fahrziel||""),
+    fahrziel:aktuellerFahrzielName(e.fahrzielId,e.fahrziel),
     kilometer:Number(e.kilometer||0)
   }]:[]);
   fahrziel.value="";
