@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#70ad47">
+<title>Arbeitszeit & Fahrten</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f8;font-family:Arial,sans-serif;color:#25303b}
+.app{width:min(100%,560px);margin:auto;padding:14px}.card{background:#fff;border-radius:20px;padding:22px 20px;margin-bottom:14px;box-shadow:0 10px 28px rgba(40,54,68,.11)}
+h1{text-align:center;margin:0 0 6px;font-size:25px}.subtitle{text-align:center;margin:0 0 20px;color:#667085}
+label{display:block;margin:16px 0 7px;font-weight:700}input,select,textarea,button{width:100%;min-height:52px;padding:12px 14px;border:1px solid #d7dde3;border-radius:12px;background:#fff;font-size:18px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.hidden{display:none!important}.info-box{margin-top:14px;padding:14px;border-radius:12px;background:#eef3f7;text-align:center;font-weight:700}
+.trip-box{margin-top:12px;padding:14px;border-radius:12px;background:#edf7e8;border:1px solid #d6e9c8}.trip-box strong{font-size:20px;color:#337a19}
+.button-row{display:grid;gap:10px;margin-top:24px}.button-row.edit-mode{grid-template-columns:1fr 1fr}.button-row button{border:0;color:white;font-weight:700}
+#saveButton,#updateButton,.primary{background:#70ad47}.danger{background:#c94c4c}.muted{background:#7b8794}.secondary-row{display:none;grid-column:1/-1}.edit-mode .secondary-row{display:block}
+#meldung{text-align:center;min-height:24px;margin-top:14px;font-weight:700}.success{color:#337a19}.error{color:#b42318}
+details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;font-weight:700;cursor:pointer}.content{padding:0 20px 22px}
+.calendar-head{display:flex;align-items:center;gap:10px}.calendar-head button{width:44px;padding:0}.calendar-head div{flex:1;text-align:center;font-weight:700}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:14px}.day-name{text-align:center;font-size:12px;font-weight:700}.day-cell{min-height:48px;padding:5px 2px;border:1px solid #dce2e7;border-radius:10px}.empty{visibility:hidden}.today{box-shadow:inset 0 0 0 2px #4a90e2}.selected{outline:3px solid #20252b}.status-arbeit{background:#dceeff}.status-abwesenheit{background:#dff3d2}.day-number{display:block;font-weight:700}.status-label{display:block;font-size:9px;margin-top:3px}
+.week-box{padding:14px;background:#eef3f7;border-radius:14px;text-align:center;margin-bottom:14px}.overview{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}.stat{padding:12px 8px;background:#f7f8fa;border:1px solid #e3e7eb;border-radius:12px;text-align:center}.stat strong{display:block;font-size:20px;margin-bottom:3px}.stat span{font-size:12px;color:#667085}
+.calendar-tooltip{position:fixed;z-index:9999;display:none;max-width:min(300px,calc(100vw - 24px));padding:10px 12px;border-radius:10px;background:#25303b;color:#fff;font-size:13px;line-height:1.4;white-space:pre-line;text-align:left;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none}.calendar-tooltip.visible{display:block}
+.year-overview-title{margin:18px 0 8px;font-size:14px}.year-month-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.year-month{padding:9px 4px;background:#f7f8fa;border:1px solid #e3e7eb;border-radius:10px;text-align:center}.year-month span{display:block;font-size:11px;color:#667085;margin-bottom:4px}.year-month strong{font-size:13px}.year-month small{display:block;margin-top:3px;color:#667085}
+.target-list{display:grid;gap:8px;margin-top:14px}.target-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid #e3e7eb;border-radius:12px;background:#f8f9fa}.target-item strong{display:block}.target-item small{display:block;color:#667085;margin-top:3px}.target-item button{width:auto;min-height:38px;padding:7px 10px;font-size:14px}
+.action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.action-row button{border:0;color:#fff;font-weight:700}.route-result{margin-top:10px;padding:12px;border-radius:10px;background:#eef3f7}.route-result strong{color:#337a19}
+.export-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.export-row button{border:0;color:#fff;font-weight:700}.export-excel{background:#3f7f3f}.export-pdf{background:#4a6fa5}.export-hint{margin:10px 0 0;color:#667085;font-size:12px}
+@media(max-width:420px){.app{padding:8px}.row,.action-row,.export-row{grid-template-columns:1fr}.year-month-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<main class="app">
+<section class="card">
+<h1>Arbeitszeit & Fahrten</h1>
+<p class="subtitle">Arbeitszeit ohne Sollstunden · Fahrten immer Hin & Rück</p>
+<form id="entryForm">
+<label for="datum">Datum</label><input type="date" id="datum" required>
+<div class="row">
+<div><label for="beginn">Beginn</label><input type="text" id="beginn" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
+<div><label for="ende">Ende</label><input type="text" id="ende" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
+</div>
+<div class="info-box">Berechnete Stunden: <span id="stundenAnzeige">0</span></div>
+<label for="abwesenheit">Abwesenheit</label>
+<select id="abwesenheit"><option value="">Keine</option><option>Urlaub</option><option>Krank</option></select>
+<label for="fahrziel">Fahrt</label>
+<select id="fahrziel"><option value="">Keine Fahrt</option></select>
+<div id="fahrtInfo" class="trip-box hidden">Gesamtstrecke Hin & Rück: <strong id="fahrtKm">0 km</strong></div>
+<label for="notiz">Notiz (optional)</label><textarea id="notiz"></textarea>
+<div id="buttonRow" class="button-row">
+<button id="saveButton" type="submit">Speichern</button>
+<button id="updateButton" type="button" hidden>Ändern</button>
+<button id="deleteButton" type="button" hidden class="danger">Löschen</button>
+<div class="secondary-row"><button id="cancelButton" type="button" class="muted">Bearbeitung abbrechen</button></div>
+</div>
+<div id="meldung"></div>
+</form>
+</section>
+
+<details class="card" open><summary>Kalender</summary><div class="content">
+<div id="weekBox" class="week-box"></div>
+<div class="overview">
+<div class="stat"><strong id="monatStunden">0 h</strong><span>Stunden im Monat</span></div>
+<div class="stat"><strong id="monatKm">0 km</strong><span>Kilometer im Monat</span></div>
+</div>
+<div class="calendar-head"><button id="prevMonth" type="button">‹</button><div id="monthLabel"></div><button id="nextMonth" type="button">›</button></div>
+<div id="calendarGrid" class="calendar-grid"></div>
+</div></details>
+
+<details class="card" open><summary>Jahresübersicht</summary><div class="content">
+<div class="overview">
+<div class="stat"><strong id="jahrStunden">0 h</strong><span>Stunden im Jahr</span></div>
+<div class="stat"><strong id="jahrKm">0 km</strong><span>Kilometer im Jahr</span></div>
+</div>
+<h3 class="year-overview-title">Monate</h3>
+<div id="monatsGrid" class="year-month-grid"></div>
+</div></details>
+
+<details class="card"><summary>Fahrziele verwalten</summary><div class="content">
+<label for="startAdresse">Startadresse</label>
+<input id="startAdresse" type="text" placeholder="z. B. Zuhause, Straße Hausnummer, Ort">
+<button id="startSpeichern" type="button" class="primary" style="margin-top:10px;border:0;color:#fff;font-weight:700">Startadresse speichern</button>
+
+<label for="zielName">Neues Fahrziel</label>
+<input id="zielName" type="text" placeholder="z. B. Fußballtraining">
+<label for="zielAdresse">Adresse des Fahrziels</label>
+<input id="zielAdresse" type="text" placeholder="Straße Hausnummer, Ort">
+<div class="action-row">
+<button id="streckeBerechnen" type="button" class="muted">Strecke berechnen</button>
+<button id="zielSpeichern" type="button" class="primary" disabled>Fahrziel speichern</button>
+</div>
+<div id="routeResult" class="route-result hidden"></div>
+<div id="targetList" class="target-list"></div>
+</div></details>
+
+<details class="card" open><summary>Export</summary><div class="content">
+<label for="exportZeitraum">Zeitraum</label>
+<select id="exportZeitraum"><option value="monat">Aktueller Monat</option><option value="jahr">Ganzes Jahr</option></select>
+<p class="export-hint">Exportiert Datum, Zeiten, Stunden, Abwesenheit, Fahrziel und Kilometer.</p>
+<div class="export-row">
+<button id="exportExcel" type="button" class="export-excel">Excel (.xlsx)</button>
+<button id="exportPdf" type="button" class="export-pdf">PDF / Drucken</button>
+</div>
+</div></details>
+</main>
+<div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="config.js?v=1.1"></script>
+<script src="app.js?v=1"></script>
+<script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./service-worker.js").catch(console.error)}</script>
+</body>
+</html>
