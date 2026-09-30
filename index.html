@@ -13,6 +13,9 @@
 .app{width:min(100%,560px);margin:auto;padding:14px}.card{background:#fff;border-radius:20px;padding:22px 20px;margin-bottom:14px;box-shadow:0 10px 28px rgba(40,54,68,.11)}
 h1{text-align:center;margin:0 0 6px;font-size:25px}.subtitle{text-align:center;margin:0 0 20px;color:#667085}
 label{display:block;margin:16px 0 7px;font-weight:700}input,select,textarea,button{width:100%;min-height:52px;padding:12px 14px;border:1px solid #d7dde3;border-radius:12px;background:#fff;font-size:18px}
+button:not(:disabled){cursor:pointer}
+button:not(:disabled):active{transform:translateY(1px) scale(.99)}
+button:disabled{cursor:not-allowed!important;opacity:.45!important;background:#aab2bb!important;color:#fff!important}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.hidden{display:none!important}.info-box{margin-top:14px;padding:14px;border-radius:12px;background:#eef3f7;text-align:center;font-weight:700}
 .trip-box{margin-top:12px;padding:14px;border-radius:12px;background:#edf7e8;border:1px solid #d6e9c8}.trip-box strong{font-size:20px;color:#337a19}
 .button-row{display:grid;gap:10px;margin-top:24px}.button-row.edit-mode{grid-template-columns:1fr 1fr}.button-row button{border:0;color:white;font-weight:700}
@@ -87,7 +90,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <label for="zielAdresse">Adresse des Fahrziels</label>
 <input id="zielAdresse" type="text" placeholder="Straße Hausnummer, Ort">
 <div class="action-row">
-<button id="streckeBerechnen" type="button" class="muted">Strecke berechnen</button>
+<button id="streckeBerechnen" type="button" class="primary">Strecke berechnen</button>
 <button id="zielSpeichern" type="button" class="primary" disabled>Fahrziel speichern</button>
 </div>
 <div id="routeResult" class="route-result hidden"></div>
@@ -106,8 +109,8 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<script src="config.js?v=1.1"></script>
-<script src="app.js?v=1"></script>
+<script src="config.js?v=1.2"></script>
+<script src="app.js?v=1.2"></script>
 <script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./service-worker.js").catch(console.error)}</script>
 </body>
 </html>
