@@ -7,12 +7,13 @@ const state={
 let jsonpSequenz=0,ladeSequenz=0;
 
 const form=$("entryForm"),datum=$("datum"),beginn=$("beginn"),ende=$("ende"),abwesenheit=$("abwesenheit"),fahrziel=$("fahrziel"),notiz=$("notiz"),meldung=$("meldung");
-const save=$("saveButton"),update=$("updateButton"),del=$("deleteButton"),cancel=$("cancelButton"),buttonRow=$("buttonRow");
+const save=$("saveButton"),update=$("updateButton"),del=$("deleteButton"),copyTime=$("copyTimeButton"),cancel=$("cancelButton"),buttonRow=$("buttonRow");
 
 window.onload=init;
 form.onsubmit=speichern;
 update.onclick=aktualisieren;
 del.onclick=loeschen;
+copyTime.onclick=arbeitszeitKopieren;
 cancel.onclick=()=>resetForm();
 beginn.oninput=stundenBerechnen; ende.oninput=stundenBerechnen;
 beginn.addEventListener("blur",()=>zeitFormatieren(beginn));
@@ -381,12 +382,19 @@ function eintragLaden(e){
   editMode(true);
   window.scrollTo({top:0,behavior:"smooth"});
 }
+function arbeitszeitKopieren(){
+  const start=normalisiereZeit(beginn.value),schluss=normalisiereZeit(ende.value);
+  if(!start||!schluss){zeige("Für diesen Tag gibt es keine Arbeitszeit zum Kopieren.","error");return}
+  state.originalDatum=null;state.ausgewaehlt=null;datum.value="";beginn.value=start;ende.value=schluss;abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];
+  editMode(false);handleAbwesenheit();renderFahrtInfo();renderAktuelleFahrten();stundenBerechnen();renderKalender();
+  zeige("Arbeitszeit kopiert ✅ Bitte jetzt das neue Datum auswählen und speichern.","success");datum.focus();
+}
 function resetForm(heute=true){
   state.originalDatum=null;editMode(false);beginn.value="";ende.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];
   if(heute){datum.value=iso(new Date());state.ausgewaehlt=datum.value}
   handleAbwesenheit();renderFahrtInfo();renderAktuelleFahrten();stundenBerechnen();
 }
-function editMode(a){save.hidden=a;update.hidden=!a;del.hidden=!a;buttonRow.classList.toggle("edit-mode",a)}
+function editMode(a){save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;buttonRow.classList.toggle("edit-mode",a)}
 
 function renderKalender(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth(),first=new Date(y,m,1),last=new Date(y,m+1,0),offset=(first.getDay()+6)%7,map=new Map(state.eintraege.map(e=>[e.datum,e])),g=$("calendarGrid");
