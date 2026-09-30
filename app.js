@@ -49,16 +49,32 @@ async function init(){
   state.kalenderDatum=ausIso(datum.value);
   $("lohnMonat").value=datum.value.slice(0,7);
   stundenBerechnen();
-  if(pruefeKonfiguration()) await ladeJahr(state.kalenderDatum.getFullYear());
-  else renderLeerzustand();
+
+  // Kalender sofort anzeigen. Die gespeicherten Daten werden danach geladen.
+  renderLeerzustand();
+
+  if(pruefeKonfiguration()){
+    $("weekBox").textContent="Daten werden geladen …";
+    await ladeJahr(state.kalenderDatum.getFullYear());
+  }
 }
 
 function renderLeerzustand(){
   $("monthLabel").textContent=state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"});
   $("weekBox").textContent="Noch keine Datenverbindung";
-  $("monatStunden").textContent="0 h"; $("monatKm").textContent="0 km";
-  $("jahrStunden").textContent="0 h"; $("jahrKm").textContent="0 km";
-  renderKalender(); renderMonatsGrid(); renderFahrziele();
+  $("monatStunden").textContent="0 h";
+  $("monatKm").textContent="0 km";
+  $("monatBezahlt").textContent="0 h";
+  $("monatOffen").textContent="0 h";
+  $("monatBezahltEuro").textContent="–";
+  $("monatOffenEuro").textContent="–";
+  $("monatVerdienst").textContent="–";
+  $("jahrStunden").textContent="0 h";
+  $("jahrKm").textContent="0 km";
+  renderKalender();
+  renderMonatsGrid();
+  renderFahrziele();
+  renderAktuelleFahrten();
 }
 
 function normalisiereZeit(v){
