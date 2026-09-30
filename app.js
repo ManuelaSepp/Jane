@@ -52,7 +52,35 @@ function renderLeerzustand(){
   renderKalender(); renderMonatsGrid(); renderFahrziele();
 }
 
-function minuten(t){if(!t||!/^\d{2}:\d{2}$/.test(t))return null;const[a,b]=t.split(":").map(Number);if(a<0||a>23||b<0||b>59)return null;return a*60+b}
+function normalisiereZeit(v){
+  const s=String(v||"").trim();
+  if(!s)return "";
+
+  let m=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if(!m)m=s.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::\d{2})?(?:\s|$)/);
+
+  if(m){
+    const h=Number(m[1]),min=Number(m[2]);
+    if(h>=0&&h<=23&&min>=0&&min<=59){
+      return String(h).padStart(2,"0")+":"+String(min).padStart(2,"0");
+    }
+  }
+  return "";
+}
+function minuten(t){
+  const n=normalisiereZeit(t);
+  if(!n)return null;
+  const[a,b]=n.split(":").map(Number);
+  return a*60+b;
+}
+function berechneStundenAusZeiten(start,schluss){
+  const a=minuten(start),b=minuten(schluss);
+  if(a===null||b===null)return 0;
+  let diff=b-a;
+  if(diff<0)diff+=1440;
+  return diff/60;
+}
+
 function zeitFormatieren(feld){
   let v=String(feld.value||"").trim(); if(!v){feld.value="";stundenBerechnen();return}
   if(/^\d{1,2}:\d{2}$/.test(v)){const[h,m]=v.split(":").map(Number);if(h>=0&&h<=23&&m>=0&&m<=59){feld.value=String(h).padStart(2,"0")+":"+String(m).padStart(2,"0");stundenBerechnen();return}}
@@ -60,11 +88,15 @@ function zeitFormatieren(feld){
   stundenBerechnen();
 }
 function stundenBerechnen(){
-  if(abwesenheit.value){$("stundenAnzeige").textContent="0";return 0}
-  const a=minuten(beginn.value),b=minuten(ende.value);let h=0;
-  if(a!==null&&b!==null){let diff=b-a;if(diff<0)diff+=1440;h=diff/60}
-  $("stundenAnzeige").textContent=format(h);return h;
+  if(abwesenheit.value){
+    $("stundenAnzeige").textContent="0";
+    return 0;
+  }
+  const h=berechneStundenAusZeiten(beginn.value,ende.value);
+  $("stundenAnzeige").textContent=format(h);
+  return h;
 }
+
 function handleAbwesenheit(){
   const x=!!abwesenheit.value;beginn.disabled=x;ende.disabled=x;
   if(x){beginn.value="";ende.value=""} stundenBerechnen();
@@ -107,12 +139,23 @@ async function ladeJahr(jahr){
   const seq=++ladeSequenz;setNavigation(true);zeige("Lade Daten ...","");
   try{
     const r=await laden(jahr);if(seq!==ladeSequenz)return;
-    state.cacheJahr=jahr;state.jahresEintraege=Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[];
-    state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];state.startAdresse=String(r.startAdresse||"");$("startAdresse").value=state.startAdresse;
-    monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);renderFahrzielDropdown();renderFahrziele();renderAlles();zeige("","");
+    state.cacheJahr=jahr;
+    state.jahresEintraege=(Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[]).map(e=>({
+      ...e,
+      beginn:normalisiereZeit(e.beginn),
+      ende:normalisiereZeit(e.ende),
+      stunden:Number(e.stunden||0),
+      kilometer:Number(e.kilometer||0)
+    }));
+    state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
+    state.startAdresse=String(r.startAdresse||"");
+    $("startAdresse").value=state.startAdresse;
+    monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);
+    renderFahrzielDropdown();renderFahrziele();renderAlles();zeige("","");
   }catch(e){zeige("Fehler: "+e.message,"error")}
   finally{if(seq===ladeSequenz)setNavigation(false)}
 }
+
 function monatLokalSetzen(jahr,monat,rendern=true){
   if(state.cacheJahr!==jahr)return false;
   state.eintraege=state.jahresEintraege.filter(e=>{const d=ausIso(e.datum);return d.getFullYear()===jahr&&d.getMonth()===monat-1}).sort((a,b)=>a.datum.localeCompare(b.datum));
@@ -121,29 +164,95 @@ function monatLokalSetzen(jahr,monat,rendern=true){
 function renderAlles(){renderKalender();renderWoche();renderStatistik();renderMonatsGrid()}
 function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 
-async function schreiben(action,payload){
+function schreiben(action,payload){
   const body=new URLSearchParams({action,payload:JSON.stringify(payload),zeit:String(Date.now())});
-  await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",body,cache:"no-store"});
+  fetch(SCRIPT_URL,{
+    method:"POST",
+    mode:"no-cors",
+    body,
+    cache:"no-store",
+    keepalive:true
+  }).catch(err=>console.error("Hintergrund-Speicherung fehlgeschlagen:",err));
+  return Promise.resolve();
 }
-async function speichern(e){e.preventDefault();const d=daten(),f=validiere(d);if(f)return zeige(f,"error");if(state.jahresEintraege.some(x=>x.datum===d.datum))return zeige("Für dieses Datum gibt es bereits einen Eintrag.","error");await aktion("save",d)}
-async function aktualisieren(){const d={...daten(),originalDatum:state.originalDatum},f=validiere(d);if(f)return zeige(f,"error");if(state.jahresEintraege.some(x=>x.datum===d.datum&&x.datum!==state.originalDatum))return zeige("Für dieses Datum gibt es bereits einen Eintrag.","error");await aktion("update",d)}
+
+async function speichern(e){
+  e.preventDefault();
+  if(!abwesenheit.value){
+    beginn.value=normalisiereZeit(beginn.value);
+    ende.value=normalisiereZeit(ende.value);
+  }
+  const d=daten(),f=validiere(d);
+  if(f)return zeige(f,"error");
+  if(state.jahresEintraege.some(x=>x.datum===d.datum))return zeige("Für dieses Datum gibt es bereits einen Eintrag.","error");
+  await aktion("save",d);
+}
+async function aktualisieren(){
+  if(!abwesenheit.value){
+    beginn.value=normalisiereZeit(beginn.value);
+    ende.value=normalisiereZeit(ende.value);
+  }
+  const d={...daten(),originalDatum:state.originalDatum},f=validiere(d);
+  if(f)return zeige(f,"error");
+  if(state.jahresEintraege.some(x=>x.datum===d.datum&&x.datum!==state.originalDatum))return zeige("Für dieses Datum gibt es bereits einen Eintrag.","error");
+  await aktion("update",d);
+}
+
 async function loeschen(){if(!confirm("Eintrag wirklich löschen?"))return;await aktion("delete",{datum:state.originalDatum})}
 async function aktion(action,payload){
+  const btn=action==="delete"?del:(action==="update"?update:save);
+  const textVorher=btn.textContent;
   try{
-    zeige(action==="delete"?"Lösche Eintrag ...":"Speichere Eintrag ...","");await schreiben(action,payload);
+    btn.disabled=true;
+    btn.textContent=action==="delete"?"Lösche …":"Speichere …";
+    zeige(action==="delete"?"Lösche Eintrag ...":"Speichere Eintrag ...","");
+    await schreiben(action,payload);
+
     if(action==="delete")state.jahresEintraege=state.jahresEintraege.filter(e=>e.datum!==payload.datum);
     else{
-      const neu={datum:payload.datum,beginn:payload.abwesenheit?"":payload.beginn,ende:payload.abwesenheit?"":payload.ende,stunden:payload.abwesenheit?0:Number(payload.stunden||0),abwesenheit:payload.abwesenheit||"",notiz:payload.notiz||"",fahrzielId:payload.fahrzielId||"",fahrziel:payload.fahrziel||"",kilometer:Number(payload.kilometer||0)};
+      const neu={
+        datum:payload.datum,
+        beginn:payload.abwesenheit?"":normalisiereZeit(payload.beginn),
+        ende:payload.abwesenheit?"":normalisiereZeit(payload.ende),
+        stunden:payload.abwesenheit?0:Number(payload.stunden||0),
+        abwesenheit:payload.abwesenheit||"",
+        notiz:payload.notiz||"",
+        fahrzielId:payload.fahrzielId||"",
+        fahrziel:payload.fahrziel||"",
+        kilometer:Number(payload.kilometer||0)
+      };
       if(action==="update")state.jahresEintraege=state.jahresEintraege.filter(e=>e.datum!==payload.originalDatum);
-      state.jahresEintraege.push(neu);state.jahresEintraege.sort((a,b)=>a.datum.localeCompare(b.datum));
+      state.jahresEintraege.push(neu);
+      state.jahresEintraege.sort((a,b)=>a.datum.localeCompare(b.datum));
     }
-    monatLokalSetzen(state.kalenderDatum.getFullYear(),state.kalenderDatum.getMonth()+1,false);resetForm(false);renderAlles();zeige(action==="delete"?"Eintrag gelöscht ✅":action==="update"?"Änderung gespeichert ✅":"Gespeichert ✅","success");
-  }catch(e){zeige("Fehler beim Senden: "+e.message,"error")}
+
+    monatLokalSetzen(state.kalenderDatum.getFullYear(),state.kalenderDatum.getMonth()+1,false);
+    resetForm(false);
+    renderAlles();
+    zeige(action==="delete"?"Eintrag gelöscht ✅":action==="update"?"Änderung gespeichert ✅":"Gespeichert ✅","success");
+  }catch(e){
+    zeige("Fehler beim Senden: "+e.message,"error");
+  }finally{
+    btn.disabled=false;
+    btn.textContent=textVorher;
+  }
 }
 
 function eintragLaden(e){
-  state.originalDatum=e.datum;datum.value=e.datum;beginn.value=e.beginn||"";ende.value=e.ende||"";abwesenheit.value=e.abwesenheit||"";notiz.value=e.notiz||"";fahrziel.value=e.fahrzielId||"";handleAbwesenheit();renderFahrtInfo();editMode(true);window.scrollTo({top:0,behavior:"smooth"});
+  state.originalDatum=e.datum;
+  datum.value=e.datum;
+  beginn.value=normalisiereZeit(e.beginn);
+  ende.value=normalisiereZeit(e.ende);
+  abwesenheit.value=e.abwesenheit||"";
+  notiz.value=e.notiz||"";
+  fahrziel.value=e.fahrzielId||"";
+  handleAbwesenheit();
+  renderFahrtInfo();
+  stundenBerechnen();
+  editMode(true);
+  window.scrollTo({top:0,behavior:"smooth"});
 }
+
 function resetForm(heute=true){
   state.originalDatum=null;editMode(false);beginn.value="";ende.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";
   if(heute){datum.value=iso(new Date());state.ausgewaehlt=datum.value}handleAbwesenheit();renderFahrtInfo();stundenBerechnen();
