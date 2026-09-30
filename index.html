@@ -17,7 +17,7 @@ button:not(:disabled){cursor:pointer}
 button:not(:disabled):active{transform:translateY(1px) scale(.99)}
 button:disabled{cursor:not-allowed!important;opacity:.45!important;background:#aab2bb!important;color:#fff!important}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.hidden{display:none!important}.info-box{margin-top:14px;padding:14px;border-radius:12px;background:#eef3f7;text-align:center;font-weight:700}
-.trip-box{margin-top:12px;padding:14px;border-radius:12px;background:#edf7e8;border:1px solid #d6e9c8}.trip-box strong{font-size:20px;color:#337a19}
+.trip-box{margin-top:12px;padding:14px;border-radius:12px;background:#edf7e8;border:1px solid #d6e9c8}.trip-box strong{font-size:20px;color:#337a19}.fahrt-add-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:stretch}.fahrt-add-row button{width:auto;border:0;color:#fff;font-weight:700;white-space:nowrap}.entry-trip-list{display:grid;gap:8px;margin-top:12px}.entry-trip-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid #e3e7eb;border-radius:12px;background:#f8f9fa}.entry-trip-item strong{display:block}.entry-trip-item small{display:block;color:#667085;margin-top:3px}.entry-trip-item button{width:auto;min-height:38px;padding:7px 10px;font-size:14px}.trip-total{margin-top:10px;padding:12px;border-radius:10px;background:#eef3f7;text-align:center;font-weight:700}.trip-total strong{color:#337a19}
 .button-row{display:grid;gap:10px;margin-top:24px}.button-row.edit-mode{grid-template-columns:1fr 1fr}.button-row button{border:0;color:white;font-weight:700}
 #saveButton,#updateButton,.primary{background:#70ad47}.danger{background:#c94c4c}.muted{background:#7b8794}.secondary-row{display:none;grid-column:1/-1}.edit-mode .secondary-row{display:block}
 #meldung{text-align:center;min-height:24px;margin-top:14px;font-weight:700}.success{color:#337a19}.error{color:#b42318}
@@ -30,7 +30,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 .target-list{display:grid;gap:8px;margin-top:14px}.target-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid #e3e7eb;border-radius:12px;background:#f8f9fa}.target-item strong{display:block}.target-item small{display:block;color:#667085;margin-top:3px}.target-item button{width:auto;min-height:38px;padding:7px 10px;font-size:14px}
 .action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.action-row button{border:0;color:#fff;font-weight:700}.route-result{margin-top:10px;padding:12px;border-radius:10px;background:#eef3f7}.route-result strong{color:#337a19}
 .wage-current{margin-top:12px;padding:12px;border-radius:10px;background:#eef3f7;font-weight:700}.wage-history{display:grid;gap:7px;margin-top:10px}.wage-item{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #e3e7eb;border-radius:10px;background:#f8f9fa}.wage-item span{color:#667085}.payment-tools{margin-top:14px;padding-top:12px;border-top:1px solid #e3e7eb}.payment-edit{border:0;background:#4a6fa5;color:#fff;font-weight:700}.payment-info{margin:0 0 10px;text-align:center;font-weight:700}.payment-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.payment-action-grid button{border:0;color:#fff;font-weight:700}.payment-cancel{grid-column:1/-1;background:#7b8794}.export-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.export-row button{border:0;color:#fff;font-weight:700}.export-excel{background:#3f7f3f}.export-pdf{background:#4a6fa5}.export-hint{margin:10px 0 0;color:#667085;font-size:12px}
-@media(max-width:420px){.app{padding:8px}.row,.action-row,.export-row,.payment-action-grid{grid-template-columns:1fr}.payment-cancel{grid-column:auto}.year-month-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:420px){.app{padding:8px}.row,.action-row,.export-row,.payment-action-grid,.fahrt-add-row{grid-template-columns:1fr}.fahrt-add-row button{width:100%}.payment-cancel{grid-column:auto}.year-month-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -47,9 +47,14 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div class="info-box">Berechnete Stunden: <span id="stundenAnzeige">0</span></div>
 <label for="abwesenheit">Abwesenheit</label>
 <select id="abwesenheit"><option value="">Keine</option><option>Urlaub</option><option>Krank</option></select>
-<label for="fahrziel">Fahrt</label>
-<select id="fahrziel"><option value="">Keine Fahrt</option></select>
-<div id="fahrtInfo" class="trip-box hidden">Gesamtstrecke Hin & Rück: <strong id="fahrtKm">0 km</strong></div>
+<label for="fahrziel">Fahrt hinzufügen</label>
+<div class="fahrt-add-row">
+<select id="fahrziel"><option value="">Fahrziel auswählen</option></select>
+<button id="fahrtHinzufuegen" type="button" class="primary" disabled>+ Hin & Rück hinzufügen</button>
+</div>
+<div id="fahrtInfo" class="trip-box hidden">Ausgewähltes Fahrziel – Hin & Rück: <strong id="fahrtKm">0 km</strong></div>
+<div id="aktuelleFahrten" class="entry-trip-list"><div class="export-hint">Noch keine Fahrt für diesen Tag hinzugefügt.</div></div>
+<div id="fahrtGesamt" class="trip-total hidden">Fahrten gesamt: <strong id="fahrtGesamtKm">0 km</strong></div>
 <label for="notiz">Notiz (optional)</label><textarea id="notiz"></textarea>
 <div id="buttonRow" class="button-row">
 <button id="saveButton" type="submit">Speichern</button>
@@ -134,8 +139,8 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<script src="config.js?v=1.4"></script>
-<script src="app.js?v=1.4"></script>
+<script src="config.js?v=1.5"></script>
+<script src="app.js?v=1.5"></script>
 <script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./service-worker.js").catch(console.error)}</script>
 </body>
 </html>
