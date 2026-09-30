@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const state={
   eintraege:[],fahrziele:[],kalenderDatum:new Date(),ausgewaehlt:null,originalDatum:null,
   cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
-  zahlungsModus:false,zahlAuswahl:new Set()
+  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[]
 };
 let jsonpSequenz=0,ladeSequenz=0;
 
@@ -31,6 +31,8 @@ $("zahlungBearbeiten").onclick=zahlungBearbeitenStart;
 $("zahlungBezahlt").onclick=()=>zahlungsstatusSetzen(true);
 $("zahlungOffen").onclick=()=>zahlungsstatusSetzen(false);
 $("zahlungAbbrechen").onclick=zahlungBearbeitenEnde;
+$("lohnSpeichern").onclick=stundenlohnSpeichern;
+$("lohnMonat").onchange=renderStundenlohn;
 
 function pruefeKonfiguration(){
   if(typeof SCRIPT_URL!=="string"||!SCRIPT_URL.trim()){
@@ -44,6 +46,7 @@ async function init(){
   datum.value=iso(new Date());
   state.ausgewaehlt=datum.value;
   state.kalenderDatum=ausIso(datum.value);
+  $("lohnMonat").value=datum.value.slice(0,7);
   stundenBerechnen();
   if(pruefeKonfiguration()) await ladeJahr(state.kalenderDatum.getFullYear());
   else renderLeerzustand();
@@ -154,10 +157,14 @@ async function ladeJahr(jahr){
       bezahlt:e.bezahlt===true||String(e.bezahlt).toLowerCase()==="true"
     }));
     state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
+    state.stundenloehne=(Array.isArray(r.stundenloehne)?r.stundenloehne:[])
+      .map(x=>({ab:String(x.ab||""),lohn:Number(x.lohn||0)}))
+      .filter(x=>/^\d{4}-\d{2}$/.test(x.ab)&&x.lohn>0)
+      .sort((a,b)=>a.ab.localeCompare(b.ab));
     state.startAdresse=String(r.startAdresse||"");
     $("startAdresse").value=state.startAdresse;
     monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);
-    renderFahrzielDropdown();renderFahrziele();renderAlles();zeige("","");
+    renderFahrzielDropdown();renderFahrziele();renderStundenlohn();renderAlles();zeige("","");
   }catch(e){zeige("Fehler: "+e.message,"error")}
   finally{if(seq===ladeSequenz)setNavigation(false)}
 }
@@ -303,6 +310,61 @@ function renderKalender(){
     g.appendChild(b);
   }
 }
+function euro(v){
+  return Number(v||0).toLocaleString("de-DE",{style:"currency",currency:"EUR"});
+}
+function lohnFuerDatum(datumIso){
+  const monat=String(datumIso||"").slice(0,7);
+  let lohn=null;
+  for(const x of state.stundenloehne){
+    if(x.ab<=monat)lohn=Number(x.lohn);
+    else break;
+  }
+  return lohn&&lohn>0?lohn:null;
+}
+function geldWerte(eintraege){
+  const arbeit=eintraege.filter(x=>!x.abwesenheit&&Number(x.stunden||0)>0);
+  if(!arbeit.length)return{bekannt:true,gesamt:0,bezahlt:0,offen:0};
+  let gesamt=0,bezahlt=0,offen=0;
+  for(const e of arbeit){
+    const lohn=lohnFuerDatum(e.datum);
+    if(!lohn)return{bekannt:false,gesamt:0,bezahlt:0,offen:0};
+    const betrag=Number(e.stunden||0)*lohn;
+    gesamt+=betrag;
+    if(e.bezahlt)bezahlt+=betrag;else offen+=betrag;
+  }
+  return{bekannt:true,gesamt,bezahlt,offen};
+}
+function renderStundenlohn(){
+  const monat=$("lohnMonat").value||iso(state.kalenderDatum).slice(0,7);
+  const probe=monat+"-01",lohn=lohnFuerDatum(probe);
+  $("lohnAktuell").textContent=lohn?("Für diesen Monat gültig: "+euro(lohn)+" / Stunde"):"Für diesen Monat ist noch kein Stundenlohn hinterlegt.";
+  const g=$("lohnHistorie");g.innerHTML="";
+  if(!state.stundenloehne.length){
+    g.innerHTML='<div class="export-hint">Noch kein Stundenlohn gespeichert.</div>';
+    return;
+  }
+  [...state.stundenloehne].reverse().forEach(x=>{
+    const d=document.createElement("div");d.className="wage-item";
+    const [j,m]=x.ab.split("-");
+    d.innerHTML=`<span>ab ${m}/${j}</span><strong>${euro(x.lohn)} / h</strong>`;
+    g.appendChild(d);
+  });
+}
+async function stundenlohnSpeichern(){
+  const ab=$("lohnMonat").value,roh=String($("stundenlohn").value||"").trim().replace(",","."),
+        lohn=Number(roh);
+  if(!/^\d{4}-\d{2}$/.test(ab))return zeige("Bitte den Monat für den Stundenlohn auswählen.","error");
+  if(!(lohn>0))return zeige("Bitte einen gültigen Stundenlohn eintragen.","error");
+  const vorhanden=state.stundenloehne.find(x=>x.ab===ab);
+  if(vorhanden)vorhanden.lohn=lohn;else state.stundenloehne.push({ab,lohn});
+  state.stundenloehne.sort((a,b)=>a.ab.localeCompare(b.ab));
+  await schreiben("saveStundenlohn",{ab,lohn});
+  $("stundenlohn").value="";
+  renderStundenlohn();renderStatistik();
+  zeige("Stundenlohn ab "+ab.slice(5,7)+"/"+ab.slice(0,4)+" gespeichert ✅","success");
+}
+
 function zahlungBearbeitenStart(){
   state.zahlungsModus=true;
   state.zahlAuswahl.clear();
@@ -362,6 +424,7 @@ function monatsWerte(jahr,monat){
     km:e.reduce((s,x)=>s+Number(x.kilometer||0),0),
     bezahltStunden:arbeit.filter(x=>x.bezahlt).reduce((s,x)=>s+Number(x.stunden||0),0),
     offenStunden:arbeit.filter(x=>!x.bezahlt).reduce((s,x)=>s+Number(x.stunden||0),0),
+    geld:geldWerte(e),
     daten:e
   };
 }
@@ -380,6 +443,9 @@ function renderStatistik(){
   $("monatKm").textContent=format(mw.km)+" km";
   $("monatBezahlt").textContent=format(mw.bezahltStunden)+" h";
   $("monatOffen").textContent=format(mw.offenStunden)+" h";
+  $("monatBezahltEuro").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.bezahlt):"–";
+  $("monatOffenEuro").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.offen):"–";
+  $("monatVerdienst").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.gesamt):"–";
   $("jahrStunden").textContent=format(jw.stunden)+" h";
   $("jahrKm").textContent=format(jw.km)+" km";
 }
@@ -393,7 +459,7 @@ function renderMonatsGrid(){
   });
 }
 async function monatWechseln(delta){
-  const altJ=state.kalenderDatum.getFullYear();state.kalenderDatum=new Date(altJ,state.kalenderDatum.getMonth()+delta,1);const neuJ=state.kalenderDatum.getFullYear();state.ausgewaehlt=iso(state.kalenderDatum);
+  const altJ=state.kalenderDatum.getFullYear();state.kalenderDatum=new Date(altJ,state.kalenderDatum.getMonth()+delta,1);const neuJ=state.kalenderDatum.getFullYear();state.ausgewaehlt=iso(state.kalenderDatum);$("lohnMonat").value=iso(state.kalenderDatum).slice(0,7);renderStundenlohn();
   if(state.cacheJahr===neuJ){monatLokalSetzen(neuJ,state.kalenderDatum.getMonth()+1,true)}else if(pruefeKonfiguration())await ladeJahr(neuJ);
 }
 function datumGeaendert(){if(!datum.value)return;state.ausgewaehlt=datum.value;const d=ausIso(datum.value);if(d.getFullYear()!==state.kalenderDatum.getFullYear()||d.getMonth()!==state.kalenderDatum.getMonth()){state.kalenderDatum=new Date(d.getFullYear(),d.getMonth(),1);if(state.cacheJahr===d.getFullYear())monatLokalSetzen(d.getFullYear(),d.getMonth()+1,true);else if(pruefeKonfiguration())ladeJahr(d.getFullYear())}else{renderKalender();renderWoche()}}
