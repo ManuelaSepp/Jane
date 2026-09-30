@@ -9,7 +9,8 @@ let jsonpSequenz=0,ladeSequenz=0;
 const form=$("entryForm"),datum=$("datum"),beginn=$("beginn"),ende=$("ende"),abwesenheit=$("abwesenheit"),fahrziel=$("fahrziel"),notiz=$("notiz"),meldung=$("meldung");
 const save=$("saveButton"),update=$("updateButton"),del=$("deleteButton"),copyTime=$("copyTimeButton"),cancel=$("cancelButton"),buttonRow=$("buttonRow");
 
-window.onload=init;
+// DOM steht bereits vollständig über diesem Script. Sofort starten, nicht auf externe Bibliotheken warten.
+init();
 form.onsubmit=speichern;
 update.onclick=aktualisieren;
 del.onclick=loeschen;
