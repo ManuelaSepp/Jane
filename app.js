@@ -1,7 +1,8 @@
 const $=id=>document.getElementById(id);
 const state={
   eintraege:[],fahrziele:[],kalenderDatum:new Date(),ausgewaehlt:null,originalDatum:null,
-  cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null
+  cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
+  zahlungsModus:false,zahlAuswahl:new Set()
 };
 let jsonpSequenz=0,ladeSequenz=0;
 
@@ -26,6 +27,10 @@ $("streckeBerechnen").onclick=streckeBerechnen;
 $("zielSpeichern").onclick=fahrzielSpeichern;
 $("exportExcel").onclick=exportExcel;
 $("exportPdf").onclick=exportPdf;
+$("zahlungBearbeiten").onclick=zahlungBearbeitenStart;
+$("zahlungBezahlt").onclick=()=>zahlungsstatusSetzen(true);
+$("zahlungOffen").onclick=()=>zahlungsstatusSetzen(false);
+$("zahlungAbbrechen").onclick=zahlungBearbeitenEnde;
 
 function pruefeKonfiguration(){
   if(typeof SCRIPT_URL!=="string"||!SCRIPT_URL.trim()){
@@ -145,7 +150,8 @@ async function ladeJahr(jahr){
       beginn:normalisiereZeit(e.beginn),
       ende:normalisiereZeit(e.ende),
       stunden:Number(e.stunden||0),
-      kilometer:Number(e.kilometer||0)
+      kilometer:Number(e.kilometer||0),
+      bezahlt:e.bezahlt===true||String(e.bezahlt).toLowerCase()==="true"
     }));
     state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
     state.startAdresse=String(r.startAdresse||"");
@@ -219,7 +225,8 @@ async function aktion(action,payload){
         notiz:payload.notiz||"",
         fahrzielId:payload.fahrzielId||"",
         fahrziel:payload.fahrziel||"",
-        kilometer:Number(payload.kilometer||0)
+        kilometer:Number(payload.kilometer||0),
+        bezahlt:false
       };
       if(action==="update")state.jahresEintraege=state.jahresEintraege.filter(e=>e.datum!==payload.originalDatum);
       state.jahresEintraege.push(neu);
@@ -266,13 +273,70 @@ function renderKalender(){
   for(let i=0;i<offset;i++){const d=document.createElement("div");d.className="day-cell empty";g.appendChild(d)}
   for(let t=1;t<=last.getDate();t++){
     const dt=new Date(y,m,t),i=iso(dt),e=map.get(i),b=document.createElement("button");b.type="button";b.dataset.datum=i;
-    b.className="day-cell "+(e?(e.abwesenheit?"status-abwesenheit":"status-arbeit"):"")+(i===iso(new Date())?" today":"")+(i===state.ausgewaehlt?" selected":"");
+    const istArbeit=!!(e&&!e.abwesenheit);
+    b.className="day-cell "
+      +(e?(e.abwesenheit?"status-abwesenheit":"status-arbeit"):"")
+      +(i===iso(new Date())?" today":"")
+      +(!state.zahlungsModus&&i===state.ausgewaehlt?" selected":"")
+      +(istArbeit&&e.bezahlt?" status-bezahlt":"")
+      +(state.zahlAuswahl.has(i)?" pay-selected":"");
     const label=e?(e.abwesenheit||format(e.stunden)+" h"+(Number(e.kilometer)>0?" · "+format(e.kilometer)+" km":"")):"";
-    b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>`;
-    if(e){const tt=tooltipFuerEintrag(e);b.title=tt.replace(/\n/g," | ");b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tt)});b.addEventListener("mousemove",ev=>{if(state.tooltipBlockDatum===i)return;tooltipPositionieren(ev.clientX,ev.clientY)});b.addEventListener("mouseleave",()=>{if(state.tooltipBlockDatum===i)state.tooltipBlockDatum=null;tooltipAusblenden()})}
-    b.onclick=()=>{state.tooltipBlockDatum=i;tooltipAusblenden();b.blur();state.ausgewaehlt=i;datum.value=i;e?eintragLaden(e):resetForm(false);datum.value=i;state.ausgewaehlt=i;renderKalender();renderWoche()};g.appendChild(b);
+    const bezahltBadge=istArbeit&&e.bezahlt?'<span class="paid-badge">✓ bezahlt</span>':"";
+    b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>${bezahltBadge}`;
+    if(e){
+      const tt=tooltipFuerEintrag(e)+(istArbeit?"\nZahlung: "+(e.bezahlt?"bezahlt":"offen"):"");
+      b.title=tt.replace(/\n/g," | ");
+      b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tt)});
+      b.addEventListener("mousemove",ev=>{if(state.tooltipBlockDatum===i)return;tooltipPositionieren(ev.clientX,ev.clientY)});
+      b.addEventListener("mouseleave",()=>{if(state.tooltipBlockDatum===i)state.tooltipBlockDatum=null;tooltipAusblenden()});
+    }
+    b.onclick=()=>{
+      state.tooltipBlockDatum=i;tooltipAusblenden();b.blur();
+      if(state.zahlungsModus){
+        if(!istArbeit){zeige("Nur Arbeitstage können als bezahlt/offen markiert werden.","error");return}
+        if(state.zahlAuswahl.has(i))state.zahlAuswahl.delete(i);else state.zahlAuswahl.add(i);
+        renderKalender();renderZahlungsAuswahl();
+        return;
+      }
+      state.ausgewaehlt=i;datum.value=i;e?eintragLaden(e):resetForm(false);datum.value=i;state.ausgewaehlt=i;renderKalender();renderWoche();
+    };
+    g.appendChild(b);
   }
 }
+function zahlungBearbeitenStart(){
+  state.zahlungsModus=true;
+  state.zahlAuswahl.clear();
+  $("zahlungBearbeiten").classList.add("hidden");
+  $("zahlungAktionen").classList.remove("hidden");
+  renderZahlungsAuswahl();
+  renderKalender();
+}
+function zahlungBearbeitenEnde(){
+  state.zahlungsModus=false;
+  state.zahlAuswahl.clear();
+  $("zahlungAktionen").classList.add("hidden");
+  $("zahlungBearbeiten").classList.remove("hidden");
+  renderKalender();
+  zeige("","");
+}
+function renderZahlungsAuswahl(){
+  const n=state.zahlAuswahl.size;
+  $("zahlungAuswahlText").textContent=n===1?"1 Arbeitstag ausgewählt":n+" Arbeitstage ausgewählt";
+  $("zahlungBezahlt").disabled=n===0;
+  $("zahlungOffen").disabled=n===0;
+}
+async function zahlungsstatusSetzen(bezahlt){
+  const daten=[...state.zahlAuswahl];
+  if(!daten.length)return;
+  state.jahresEintraege.forEach(e=>{if(daten.includes(e.datum)&&!e.abwesenheit)e.bezahlt=bezahlt});
+  state.eintraege.forEach(e=>{if(daten.includes(e.datum)&&!e.abwesenheit)e.bezahlt=bezahlt});
+  await schreiben("setBezahlt",{daten,bezahlt});
+  const anzahl=daten.length;
+  zahlungBearbeitenEnde();
+  renderAlles();
+  zeige(anzahl+(anzahl===1?" Tag ":" Tage ")+(bezahlt?"als bezahlt markiert ✅":"wieder als offen markiert ✅"),"success");
+}
+
 function tooltipFuerEintrag(e){
   const z=[ausIso(e.datum).toLocaleDateString("de-DE",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})];
   if(e.abwesenheit)z.push(e.abwesenheit);else{if(e.beginn||e.ende)z.push("Zeit: "+(e.beginn||"–")+" bis "+(e.ende||"–")+" Uhr");z.push("Stunden: "+format(e.stunden)+" h")}
@@ -292,13 +356,41 @@ function renderWoche(){
 }
 function monatsWerte(jahr,monat){
   const e=state.jahresEintraege.filter(x=>{const d=ausIso(x.datum);return d.getFullYear()===jahr&&d.getMonth()===monat-1});
-  return{stunden:e.reduce((s,x)=>s+Number(x.stunden||0),0),km:e.reduce((s,x)=>s+Number(x.kilometer||0),0),daten:e};
+  const arbeit=e.filter(x=>!x.abwesenheit);
+  return{
+    stunden:e.reduce((s,x)=>s+Number(x.stunden||0),0),
+    km:e.reduce((s,x)=>s+Number(x.kilometer||0),0),
+    bezahltStunden:arbeit.filter(x=>x.bezahlt).reduce((s,x)=>s+Number(x.stunden||0),0),
+    offenStunden:arbeit.filter(x=>!x.bezahlt).reduce((s,x)=>s+Number(x.stunden||0),0),
+    daten:e
+  };
 }
-function jahresWerte(jahr){const e=state.jahresEintraege.filter(x=>ausIso(x.datum).getFullYear()===jahr);return{stunden:e.reduce((s,x)=>s+Number(x.stunden||0),0),km:e.reduce((s,x)=>s+Number(x.kilometer||0),0)}}
-function renderStatistik(){const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth()+1,mw=monatsWerte(y,m),jw=jahresWerte(y);$("monatStunden").textContent=format(mw.stunden)+" h";$("monatKm").textContent=format(mw.km)+" km";$("jahrStunden").textContent=format(jw.stunden)+" h";$("jahrKm").textContent=format(jw.km)+" km"}
+function jahresWerte(jahr){
+  const e=state.jahresEintraege.filter(x=>ausIso(x.datum).getFullYear()===jahr),arbeit=e.filter(x=>!x.abwesenheit);
+  return{
+    stunden:e.reduce((s,x)=>s+Number(x.stunden||0),0),
+    km:e.reduce((s,x)=>s+Number(x.kilometer||0),0),
+    bezahltStunden:arbeit.filter(x=>x.bezahlt).reduce((s,x)=>s+Number(x.stunden||0),0),
+    offenStunden:arbeit.filter(x=>!x.bezahlt).reduce((s,x)=>s+Number(x.stunden||0),0)
+  };
+}
+function renderStatistik(){
+  const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth()+1,mw=monatsWerte(y,m),jw=jahresWerte(y);
+  $("monatStunden").textContent=format(mw.stunden)+" h";
+  $("monatKm").textContent=format(mw.km)+" km";
+  $("monatBezahlt").textContent=format(mw.bezahltStunden)+" h";
+  $("monatOffen").textContent=format(mw.offenStunden)+" h";
+  $("jahrStunden").textContent=format(jw.stunden)+" h";
+  $("jahrKm").textContent=format(jw.km)+" km";
+}
 function renderMonatsGrid(){
   const y=state.kalenderDatum.getFullYear(),namen=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],g=$("monatsGrid");g.innerHTML="";
-  namen.forEach((n,i)=>{const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0};const d=document.createElement("div");d.className="year-month";d.innerHTML=`<span>${n}</span><strong>${format(w.stunden)} h</strong><small>${format(w.km)} km</small>`;g.appendChild(d)});
+  namen.forEach((n,i)=>{
+    const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0,offenStunden:0};
+    const d=document.createElement("div");d.className="year-month";
+    d.innerHTML=`<span>${n}</span><strong>${format(w.stunden)} h</strong><small>${format(w.km)} km</small><small>${format(w.offenStunden)} h offen</small>`;
+    g.appendChild(d)
+  });
 }
 async function monatWechseln(delta){
   const altJ=state.kalenderDatum.getFullYear();state.kalenderDatum=new Date(altJ,state.kalenderDatum.getMonth()+delta,1);const neuJ=state.kalenderDatum.getFullYear();state.ausgewaehlt=iso(state.kalenderDatum);
@@ -342,26 +434,26 @@ function exportKontext(){
   const stunden=daten.reduce((s,e)=>s+Number(e.stunden||0),0),km=daten.reduce((s,e)=>s+Number(e.kilometer||0),0);
   return{art,jahr:y,monat:m,titel:art==="monat"?state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"}):"Jahr "+y,stunden,km,daten:[...daten].sort((a,b)=>a.datum.localeCompare(b.datum))};
 }
-function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0)}}
+function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0),bezahlt:!e.abwesenheit&&e.bezahlt===true}}
 async function exportExcel(){
   try{
     if(typeof ExcelJS==="undefined")throw new Error("Excel-Modul konnte nicht geladen werden.");const x=exportKontext(),zeilen=x.daten.map(exportZeile),wb=new ExcelJS.Workbook(),ws=wb.addWorksheet("Arbeitszeit");
-    ws.mergeCells("A1:H1");ws.getCell("A1").value="Arbeitszeit & Fahrten – "+x.titel;ws.getCell("A1").font={bold:true,size:16};ws.getCell("A1").alignment={horizontal:"center"};
+    ws.mergeCells("A1:I1");ws.getCell("A1").value="Arbeitszeit & Fahrten – "+x.titel;ws.getCell("A1").font={bold:true,size:16};ws.getCell("A1").alignment={horizontal:"center"};
     ws.mergeCells("A3:C3");ws.getCell("A3").value="Stunden gesamt";ws.getCell("D3").value=x.stunden;ws.getCell("D3").numFmt='0.00 "h"';
     ws.mergeCells("E3:G3");ws.getCell("E3").value="Kilometer gesamt";ws.getCell("H3").value=x.km;ws.getCell("H3").numFmt='0.0 "km"';
     ["A3","D3","E3","H3"].forEach(c=>ws.getCell(c).font={bold:true});
-    const headerRow=5,headers=["Datum","Tag","Beginn","Ende","Stunden","Art","Fahrziel","km"];
+    const headerRow=5,headers=["Datum","Tag","Beginn","Ende","Stunden","Art","Fahrziel","km","Bezahlt"];
     headers.forEach((h,i)=>{const c=ws.getCell(headerRow,i+1);c.value=h;c.font={bold:true,color:{argb:"FFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"70AD47"}};c.alignment={horizontal:"center",vertical:"middle"}});
-    zeilen.forEach((z,i)=>{const row=headerRow+1+i,serial=Date.UTC(z.datum.getFullYear(),z.datum.getMonth(),z.datum.getDate())/86400000+25569;ws.getCell(row,1).value=serial;ws.getCell(row,1).numFmt="dd.mm.yyyy";ws.getCell(row,2).value=z.wochentag;ws.getCell(row,3).value=z.beginn;ws.getCell(row,4).value=z.ende;ws.getCell(row,5).value=z.stunden;ws.getCell(row,5).numFmt='0.00';ws.getCell(row,6).value=z.art;ws.getCell(row,7).value=z.fahrziel;ws.getCell(row,8).value=z.kilometer;ws.getCell(row,8).numFmt='0.0';for(let c=1;c<=8;c++)ws.getCell(row,c).alignment={horizontal:"center",vertical:"middle"}});
-    const widths=[12,10,9,9,10,12,Math.max(14,...zeilen.map(z=>z.fahrziel.length+2)),10];ws.columns=widths.map(width=>({width}));ws.views=[{state:"frozen",ySplit:headerRow}];ws.autoFilter={from:{row:headerRow,column:1},to:{row:headerRow,column:8}};
+    zeilen.forEach((z,i)=>{const row=headerRow+1+i,serial=Date.UTC(z.datum.getFullYear(),z.datum.getMonth(),z.datum.getDate())/86400000+25569;ws.getCell(row,1).value=serial;ws.getCell(row,1).numFmt="dd.mm.yyyy";ws.getCell(row,2).value=z.wochentag;ws.getCell(row,3).value=z.beginn;ws.getCell(row,4).value=z.ende;ws.getCell(row,5).value=z.stunden;ws.getCell(row,5).numFmt='0.00';ws.getCell(row,6).value=z.art;ws.getCell(row,7).value=z.fahrziel;ws.getCell(row,8).value=z.kilometer;ws.getCell(row,8).numFmt='0.0';ws.getCell(row,9).value=z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):"";for(let c=1;c<=9;c++)ws.getCell(row,c).alignment={horizontal:"center",vertical:"middle"}});
+    const widths=[12,10,9,9,10,12,Math.max(14,...zeilen.map(z=>z.fahrziel.length+2)),10,10];ws.columns=widths.map(width=>({width}));ws.views=[{state:"frozen",ySplit:headerRow}];ws.autoFilter={from:{row:headerRow,column:1},to:{row:headerRow,column:9}};
     const buffer=await wb.xlsx.writeBuffer(),blob=new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=x.art==="monat"?`Arbeitszeit_Fahrten_${x.jahr}-${String(x.monat).padStart(2,"0")}.xlsx`:`Arbeitszeit_Fahrten_${x.jahr}.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch(e){zeige("Excel-Export: "+e.message,"error")}
 }
 function exportPdf(){
   try{
     const x=exportKontext(),zeilen=x.daten.map(exportZeile),fenster=window.open("","_blank");if(!fenster)throw new Error("PDF-Fenster konnte nicht geöffnet werden.");
-    const body=zeilen.map(z=>`<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td>${htmlSicher(z.beginn)}</td><td>${htmlSicher(z.ende)}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td>${htmlSicher(z.art)}</td><td>${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td></tr>`).join("");
-    fenster.document.open();fenster.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Arbeitszeit & Fahrten</title><style>@page{size:A4 landscape;margin:11mm}body{font-family:Arial,sans-serif;color:#222;margin:0}h1{font-size:20px;margin:0 0 4px}.meta{font-size:11px;color:#666;margin-bottom:12px}.summary{display:flex;gap:10px;margin:0 0 14px}.summary div{border:1px solid #ccd3d9;border-radius:8px;padding:7px 10px;min-width:160px}.summary span{display:block;font-size:10px;color:#666}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:9.5px;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}th,td{border-bottom:1px solid #d6d6d6;padding:5px;vertical-align:top;text-align:center}th{background:#eef3f7}th:nth-child(7),td:nth-child(7){width:22%}.num{white-space:nowrap}.footer{margin-top:10px;font-size:9px;color:#777}</style></head><body><h1>Arbeitszeit & Fahrten – ${htmlSicher(x.titel)}</h1><div class="meta">Erstellt am ${htmlSicher(new Date().toLocaleDateString("de-DE"))}</div><div class="summary"><div><span>Stunden gesamt</span><strong>${htmlSicher(format(x.stunden))} h</strong></div><div><span>Kilometer gesamt</span><strong>${htmlSicher(format(x.km))} km</strong></div></div><table><thead><tr><th>Datum</th><th>Tag</th><th>Beginn</th><th>Ende</th><th>Stunden</th><th>Art</th><th>Fahrziel</th><th>km</th></tr></thead><tbody>${body}</tbody></table><div class="footer">Arbeitszeit & Fahrten</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));<\/script></body></html>`);fenster.document.close();
+    const body=zeilen.map(z=>`<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td>${htmlSicher(z.beginn)}</td><td>${htmlSicher(z.ende)}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td>${htmlSicher(z.art)}</td><td>${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td></tr>`).join("");
+    fenster.document.open();fenster.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Arbeitszeit & Fahrten</title><style>@page{size:A4 landscape;margin:11mm}body{font-family:Arial,sans-serif;color:#222;margin:0}h1{font-size:20px;margin:0 0 4px}.meta{font-size:11px;color:#666;margin-bottom:12px}.summary{display:flex;gap:10px;margin:0 0 14px}.summary div{border:1px solid #ccd3d9;border-radius:8px;padding:7px 10px;min-width:160px}.summary span{display:block;font-size:10px;color:#666}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:9.5px;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}th,td{border-bottom:1px solid #d6d6d6;padding:5px;vertical-align:top;text-align:center}th{background:#eef3f7}th:nth-child(7),td:nth-child(7){width:22%}.num{white-space:nowrap}.footer{margin-top:10px;font-size:9px;color:#777}</style></head><body><h1>Arbeitszeit & Fahrten – ${htmlSicher(x.titel)}</h1><div class="meta">Erstellt am ${htmlSicher(new Date().toLocaleDateString("de-DE"))}</div><div class="summary"><div><span>Stunden gesamt</span><strong>${htmlSicher(format(x.stunden))} h</strong></div><div><span>Kilometer gesamt</span><strong>${htmlSicher(format(x.km))} km</strong></div></div><table><thead><tr><th>Datum</th><th>Tag</th><th>Beginn</th><th>Ende</th><th>Stunden</th><th>Art</th><th>Fahrziel</th><th>km</th><th>Bezahlt</th></tr></thead><tbody>${body}</tbody></table><div class="footer">Arbeitszeit & Fahrten</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));<\/script></body></html>`);fenster.document.close();
   }catch(e){zeige("PDF-Export: "+e.message,"error")}
 }
 
