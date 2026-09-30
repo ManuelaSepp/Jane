@@ -46,6 +46,36 @@ function pruefeKonfiguration(){
   return true;
 }
 
+function cacheSchluessel(jahr){return "azFahrtenCache_"+jahr}
+function speichereLokalenCache(jahr){
+  try{
+    localStorage.setItem(cacheSchluessel(jahr),JSON.stringify({
+      ts:Date.now(),
+      eintraegeJahr:state.jahresEintraege,
+      fahrziele:state.fahrziele,
+      startAdresse:state.startAdresse,
+      stundenloehne:state.stundenloehne
+    }));
+  }catch(_){}
+}
+function ladeLokalenCache(jahr){
+  try{
+    const raw=localStorage.getItem(cacheSchluessel(jahr));
+    if(!raw)return false;
+    const r=JSON.parse(raw);
+    state.cacheJahr=jahr;
+    state.jahresEintraege=Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[];
+    state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
+    state.startAdresse=String(r.startAdresse||"");
+    state.stundenloehne=Array.isArray(r.stundenloehne)?r.stundenloehne:[];
+    $("startAdresse").value=state.startAdresse;
+    aktualisiereFahrzielNamen();
+    monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);
+    renderFahrzielDropdown();renderFahrziele();renderStundenlohn();renderAlles();
+    return true;
+  }catch(_){return false}
+}
+
 async function init(){
   datum.value=iso(new Date());
   state.ausgewaehlt=datum.value;
@@ -53,12 +83,14 @@ async function init(){
   $("lohnMonat").value=datum.value.slice(0,7);
   stundenBerechnen();
 
-  // Kalender sofort anzeigen. Die gespeicherten Daten werden danach geladen.
   renderLeerzustand();
 
+  const jahr=state.kalenderDatum.getFullYear();
+  const cacheDa=ladeLokalenCache(jahr);
+
   if(pruefeKonfiguration()){
-    $("weekBox").textContent="Daten werden geladen …";
-    await ladeJahr(state.kalenderDatum.getFullYear());
+    if(!cacheDa)$("weekBox").textContent="Daten werden geladen …";
+    ladeJahr(jahr,cacheDa);
   }
 }
 
@@ -235,8 +267,10 @@ async function laden(jahr){
   }
   throw letzterFehler;
 }
-async function ladeJahr(jahr){
-  const seq=++ladeSequenz;setNavigation(true);zeige("Lade Daten ...","");
+async function ladeJahr(jahr,leise=false){
+  const seq=++ladeSequenz;
+  setNavigation(true);
+  if(!leise)zeige("Lade Daten ...","");
   try{
     const r=await laden(jahr);if(seq!==ladeSequenz)return;
     state.cacheJahr=jahr;
@@ -268,8 +302,13 @@ async function ladeJahr(jahr){
     state.startAdresse=String(r.startAdresse||"");
     $("startAdresse").value=state.startAdresse;
     monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);
-    renderFahrzielDropdown();renderFahrziele();renderStundenlohn();renderAlles();zeige("","");
-  }catch(e){zeige("Fehler: "+e.message,"error")}
+    renderFahrzielDropdown();renderFahrziele();renderStundenlohn();renderAlles();
+    speichereLokalenCache(jahr);
+    if(!leise)zeige("","");
+  }catch(e){
+    if(!leise)zeige("Fehler: "+e.message,"error");
+    else console.warn("Hintergrund-Aktualisierung fehlgeschlagen:",e);
+  }
   finally{if(seq===ladeSequenz)setNavigation(false)}
 }
 
@@ -349,6 +388,7 @@ async function aktion(action,payload){
     monatLokalSetzen(state.kalenderDatum.getFullYear(),state.kalenderDatum.getMonth()+1,false);
     resetForm(false);
     renderAlles();
+    speichereLokalenCache(state.kalenderDatum.getFullYear());
     zeige(action==="delete"?"Eintrag gelöscht ✅":action==="update"?"Änderung gespeichert ✅":"Gespeichert ✅","success");
   }catch(e){
     zeige("Fehler beim Senden: "+e.message,"error");
