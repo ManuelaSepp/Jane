@@ -44,6 +44,10 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div><label for="beginn">Beginn</label><input type="text" id="beginn" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
 <div><label for="ende">Ende</label><input type="text" id="ende" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
 </div>
+<div class="row">
+<div><label for="beginn2">Zweiter Dienst – Beginn (optional)</label><input type="text" id="beginn2" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
+<div><label for="ende2">Zweiter Dienst – Ende (optional)</label><input type="text" id="ende2" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
+</div>
 <div class="info-box">Berechnete Stunden: <span id="stundenAnzeige">0</span></div>
 <label for="abwesenheit">Abwesenheit</label>
 <select id="abwesenheit"><option value="">Keine</option><option>Urlaub</option><option>Krank</option></select>
@@ -141,7 +145,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=1.8"></script>
-<script src="app.js?v=1.8.3"></script>
+<script src="app.js?v=1.9.0"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./service-worker.js").catch(console.error)}</script>
 </body>
