@@ -239,7 +239,7 @@ function sonderVorlagenLesen(){try{const v=JSON.parse(localStorage.getItem("jane
 function sonderVorlageBetragAm(v,datum){const hist=Array.isArray(v.historie)?v.historie:[];let wert=Number(v.betrag);for(const h of [...hist].sort((a,b)=>a.ab.localeCompare(b.ab))){if(h.ab<=datum)wert=Number(h.betrag);else break;}return wert;}
 function sonderVorlagenSpeichern(){
  const name=$("sonderVorlageName").value.trim(),betrag=Number($("sonderVorlageBetrag").value.replace(",",".")),ab=$("sonderVorlageDatum").value;
- if(!name||!Number.isFinite(betrag)||betrag<0||!/^\\d{4}-\\d{2}-\\d{2}$/.test(ab))return zeige("Bitte Bezeichnung, Betrag und Gültigkeitsdatum eingeben.","error");
+ if(!name||!Number.isFinite(betrag)||betrag<0||!/^\d{4}-\d{2}-\d{2}$/.test(ab))return zeige("Bitte Bezeichnung, Betrag und Gültigkeitsdatum eingeben.","error");
  const v=sonderVorlagenLesen(),idx=v.findIndex(x=>x.name.toLocaleLowerCase("de")===name.toLocaleLowerCase("de"));
  if(idx>=0){const alt=v[idx];const historie=Array.isArray(alt.historie)?alt.historie.slice():[];const hi=historie.findIndex(x=>x.ab===ab);if(hi>=0)historie[hi]={ab,betrag};else historie.push({ab,betrag});v[idx]={...alt,name,betrag:alt.betrag,historie};}
  else v.push({name,betrag,historie:[{ab,betrag}]});
@@ -260,7 +260,7 @@ function sonderleistungHinzufuegen(x={}){
  const n=document.createElement("input");n.className="sonder-name";n.placeholder="Bezeichnung";n.maxLength=150;n.value=x.name||"";n.style.flex="2";n.disabled=!!x.bezahlt;
  const auswahl=document.createElement("select");auswahl.className="sonder-vorlage";auswahl.disabled=!!x.bezahlt;
  const leer=document.createElement("option");leer.value="";leer.textContent="Vorlage auswählen …";auswahl.appendChild(leer);
- for(const v of sonderVorlagenLesen()){const o=document.createElement("option");o.value=v.name;o.textContent=v.name+" · "+euro(v.betrag);auswahl.appendChild(o);}
+ for(const v of sonderVorlagenLesen()){const o=document.createElement("option");o.value=v.name;o.textContent=v.name+" · "+euro(sonderVorlageBetragAm(v,datum.value));auswahl.appendChild(o);}
  const frei=document.createElement("option");frei.value="__frei";frei.textContent="Freie Eingabe";auswahl.appendChild(frei);
  auswahl.onchange=()=>{if(auswahl.value==="__frei"){n.value="";b.value="";n.focus();return;}const v=sonderVorlagenLesen().find(v=>v.name===auswahl.value);if(v){n.value=v.name;b.value=String(sonderVorlageBetragAm(v,datum.value)).replace(".",",");}};
  n.addEventListener("change",()=>{const v=sonderVorlagenLesen().find(v=>v.name===n.value.trim());if(v)auswahl.value=v.name;});
