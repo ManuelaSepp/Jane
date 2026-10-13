@@ -31,7 +31,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 .action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.action-row button{border:0;color:#fff;font-weight:700}.route-result{margin-top:10px;padding:12px;border-radius:10px;background:#eef3f7}.route-result strong{color:#337a19}
 .wage-current{margin-top:12px;padding:12px;border-radius:10px;background:#eef3f7;font-weight:700}.wage-history{display:grid;gap:7px;margin-top:10px}.wage-item{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #e3e7eb;border-radius:10px;background:#f8f9fa}.wage-item span{color:#667085}.payment-tools{margin-top:14px;padding-top:12px;border-top:1px solid #e3e7eb}.payment-edit{border:0;background:#4a6fa5;color:#fff;font-weight:700}.payment-info{margin:0 0 10px;text-align:center;font-weight:700}.payment-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.payment-action-grid button{border:0;color:#fff;font-weight:700}.payment-cancel{grid-column:1/-1;background:#7b8794}.export-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.export-row button{border:0;color:#fff;font-weight:700}.export-excel{background:#3f7f3f}.export-pdf{background:#4a6fa5}.export-hint{margin:10px 0 0;color:#667085;font-size:12px}
 @media(max-width:420px){.app{padding:8px}.row,.action-row,.export-row,.payment-action-grid,.fahrt-add-row{grid-template-columns:1fr}.fahrt-add-row button{width:100%}.payment-cancel{grid-column:auto}.year-month-grid{grid-template-columns:repeat(2,1fr)}}
-</style>
+details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px;margin:12px 0}details.mobile-optional summary{cursor:pointer;font-weight:700;padding:5px}details.mobile-optional[open] summary{margin-bottom:10px}</style>
 </head>
 <body>
 <main class="app">
@@ -44,14 +44,14 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div><label for="beginn">Beginn</label><input type="text" id="beginn" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
 <div><label for="ende">Ende</label><input type="text" id="ende" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
 </div>
-<div class="row">
+<details class="mobile-optional" id="zweiterDienstDetails"><summary>Zweiter Dienst (optional)</summary><div class="row">
 <div><label for="beginn2">Zweiter Dienst – Beginn (optional)</label><input type="text" id="beginn2" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
 <div><label for="ende2">Zweiter Dienst – Ende (optional)</label><input type="text" id="ende2" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
-</div>
+</div></details>
 <div class="info-box">Berechnete Stunden: <span id="stundenAnzeige">0</span></div>
-<div style="margin-top:12px"><label>Sonderleistungen (optional)</label><div id="sonderListe"></div><button type="button" onclick="sonderleistungHinzufuegen()">+ Sonderleistung hinzufügen</button></div><label for="abwesenheit">Abwesenheit</label>
+<details class="mobile-optional" id="sonderDetails"><summary>Sonderleistungen (optional)</summary><div style="margin-top:12px"><label>Sonderleistungen (optional)</label><div id="sonderListe"></div><button type="button" onclick="sonderleistungHinzufuegen()">+ Sonderleistung hinzufügen</button></div></details><label for="abwesenheit">Abwesenheit</label>
 <select id="abwesenheit"><option value="">Keine</option><option>Urlaub</option><option>Krank</option></select>
-<label for="fahrziel">Fahrt hinzufügen</label>
+<details class="mobile-optional" id="fahrtenDetails"><summary>Fahrten & Kilometer (optional)</summary><label for="fahrziel">Fahrt hinzufügen</label>
 <div class="fahrt-add-row">
 <select id="fahrziel"><option value="">Fahrziel auswählen</option></select>
 <button id="fahrtHinzufuegen" type="button" class="primary" disabled>+ Hin & Rück hinzufügen</button>
@@ -59,8 +59,8 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div id="fahrtInfo" class="trip-box hidden">Ausgewähltes Fahrziel – Hin & Rück: <strong id="fahrtKm">0 km</strong></div>
 <div id="aktuelleFahrten" class="entry-trip-list"><div class="export-hint">Noch keine Fahrt für diesen Tag hinzugefügt.</div></div>
 <div id="fahrtGesamt" class="trip-total hidden">Fahrten gesamt: <strong id="fahrtGesamtKm">0 km</strong></div>
-<label for="notiz">Notiz (optional)</label><textarea id="notiz"></textarea>
-<div id="buttonRow" class="button-row">
+<label for="kmModus">Abrechnung</label><select id="kmModus"><option value="km">Kilometer × Kilometersatz</option><option value="pauschal">Einmaliger Fahrtkostenbetrag</option></select><label for="kmPauschal">Einmaliger Betrag (€)</label><input id="kmPauschal" inputmode="decimal" placeholder="z. B. 15,00"></details><label for="notiz">Notiz (optional)</label><textarea id="notiz"></textarea>
+<div id="einzelStatus" class="button-row" hidden></div><div id="buttonRow" class="button-row">
 <button id="saveButton" type="submit">Speichern</button>
 <button id="updateButton" type="button" hidden>Ändern</button>
 <button id="deleteButton" type="button" hidden class="danger">Löschen</button>
@@ -79,7 +79,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div class="stat"><strong id="monatKm">0 km</strong><span>Kilometer im Monat</span></div>
 <div class="stat"><strong id="monatBezahlt">0 h</strong><span>davon bezahlt</span><small id="monatBezahltEuro">–</small></div>
 <div class="stat"><strong id="monatOffen">0 h</strong><span>noch offen</span><small id="monatOffenEuro">–</small></div>
-<div class="stat stat-wide"><strong id="monatVerdienst">–</strong><small style="display:block">Davon Sonderleistungen: <strong id="monatSonder">0,00 €</strong></small><span>Verdienst im Monat</span></div>
+<div class="stat stat-wide"><strong id="monatVerdienst">–</strong><small style="display:block">Davon Sonderleistungen: <strong id="monatSonder">0,00 €</strong></small><small style="display:block">Fahrtkosten: <strong id="monatKmEuro">0,00 €</strong></small><span>Verdienst im Monat</span></div>
 </div>
 <div class="calendar-head"><button id="prevMonth" type="button">‹</button><div id="monthLabel"></div><button id="nextMonth" type="button">›</button></div>
 <div id="calendarGrid" class="calendar-grid"></div>
@@ -116,7 +116,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div id="lohnHistorie" class="wage-history"></div>
 </div></details>
 
-<details class="card"><summary>Fahrziele verwalten</summary><div class="content">
+<details class="card"><summary>Kilometersatz verwalten</summary><div class="content"><label for="kmSatzMonat">Gültig ab Monat</label><input type="month" id="kmSatzMonat"><label for="kmSatzWert">Euro pro Kilometer</label><input type="text" inputmode="decimal" id="kmSatzWert" placeholder="z. B. 0,30"><button type="button" id="kmSatzSpeichern">Kilometersatz speichern</button></div></details><details class="card"><summary>Fahrziele verwalten</summary><div class="content">
 <label for="startAdresse">Startadresse</label>
 <input id="startAdresse" type="text" placeholder="z. B. Zuhause, Straße Hausnummer, Ort">
 <button id="startSpeichern" type="button" class="primary" style="margin-top:10px;border:0;color:#fff;font-weight:700">Startadresse speichern</button>
@@ -145,7 +145,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=1.8"></script>
-<script src="app.js?v=1.10.0"></script>
+<script src="app.js?v=2.0.0-test"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./service-worker.js").catch(console.error)}</script>
 </body>
