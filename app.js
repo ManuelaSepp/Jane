@@ -261,7 +261,7 @@ function daten(){
   };
 }
 function validiere(d){
-  if(!d.datum)return"Bitte Datum auswählen.";if(d.sonderleistungen.some(x=>!x.name||!Number.isFinite(x.betrag)||x.betrag<=0))return"Bitte Sonderleistungen vollständig ausfüllen.";
+  if(!d.datum)return"Bitte Datum auswählen.";if(d.sonderleistungen.some(x=>!x.name||!Number.isFinite(x.betrag)||x.betrag<0))return"Bitte Sonderleistungen vollständig ausfüllen.";
   if(d.abwesenheit)return"";
   if(!d.beginn||!d.ende)return"Bitte Beginn und Ende eintragen.";
   if(!!d.beginn2!==!!d.ende2)return"Zweiter Dienst: Bitte Beginn und Ende vollständig eintragen.";
