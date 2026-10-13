@@ -31,7 +31,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 .action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.action-row button{border:0;color:#fff;font-weight:700}.route-result{margin-top:10px;padding:12px;border-radius:10px;background:#eef3f7}.route-result strong{color:#337a19}
 .wage-current{margin-top:12px;padding:12px;border-radius:10px;background:#eef3f7;font-weight:700}.wage-history{display:grid;gap:7px;margin-top:10px}.wage-item{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #e3e7eb;border-radius:10px;background:#f8f9fa}.wage-item span{color:#667085}.payment-tools{margin-top:14px;padding-top:12px;border-top:1px solid #e3e7eb}.payment-edit{border:0;background:#4a6fa5;color:#fff;font-weight:700}.payment-info{margin:0 0 10px;text-align:center;font-weight:700}.payment-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.payment-action-grid button{border:0;color:#fff;font-weight:700}.payment-cancel{grid-column:1/-1;background:#7b8794}.export-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.export-row button{border:0;color:#fff;font-weight:700}.export-excel{background:#3f7f3f}.export-pdf{background:#4a6fa5}.export-hint{margin:10px 0 0;color:#667085;font-size:12px}
 @media(max-width:420px){.app{padding:8px}.row,.action-row,.export-row,.payment-action-grid,.fahrt-add-row{grid-template-columns:1fr}.fahrt-add-row button{width:100%}.payment-cancel{grid-column:auto}.year-month-grid{grid-template-columns:repeat(2,1fr)}}
-details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px;margin:12px 0}details.mobile-optional summary{cursor:pointer;font-weight:700;padding:5px}details.mobile-optional[open] summary{margin-bottom:10px}</style>
+details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px;margin:12px 0}details.mobile-optional summary{cursor:pointer;font-weight:700;padding:5px}details.mobile-optional[open] summary{margin-bottom:10px}.sonder-vorlage{flex:1 1 100%;min-width:0} .sonder-zeile{border-bottom:1px solid #e4e9e6;padding-bottom:10px}</style>
 </head>
 <body>
 <main class="app">
@@ -116,7 +116,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 <div id="lohnHistorie" class="wage-history"></div>
 </div></details>
 
-<details class="card"><summary>Kilometersatz verwalten</summary><div class="content"><label for="kmSatzMonat">Gültig ab Monat</label><input type="month" id="kmSatzMonat"><label for="kmSatzWert">Euro pro Kilometer</label><input type="text" inputmode="decimal" id="kmSatzWert" placeholder="z. B. 0,30"><button type="button" id="kmSatzSpeichern">Kilometersatz speichern</button></div></details><details class="card"><summary>Fahrziele verwalten</summary><div class="content">
+<details class="card"><summary>Sonderleistungen-Vorlagen verwalten</summary><div class="content"><p class="export-hint">Vorlagen werden vorerst nur auf diesem Gerät gespeichert.</p><label for="sonderVorlageName">Bezeichnung</label><input id="sonderVorlageName" placeholder="z. B. Übernachtung"><label for="sonderVorlageBetrag">Pauschale (€)</label><input id="sonderVorlageBetrag" inputmode="decimal" placeholder="z. B. 25,00"><button id="sonderVorlageSpeichern" type="button">Vorlage speichern</button><div id="sonderVorlagenListe"></div></div></details><details class="card"><summary>Kilometersatz verwalten</summary><div class="content"><label for="kmSatzMonat">Gültig ab Monat</label><input type="month" id="kmSatzMonat"><label for="kmSatzWert">Euro pro Kilometer</label><input type="text" inputmode="decimal" id="kmSatzWert" placeholder="z. B. 0,30"><button type="button" id="kmSatzSpeichern">Kilometersatz speichern</button></div></details><details class="card"><summary>Fahrziele verwalten</summary><div class="content">
 <label for="startAdresse">Startadresse</label>
 <input id="startAdresse" type="text" placeholder="z. B. Zuhause, Straße Hausnummer, Ort">
 <button id="startSpeichern" type="button" class="primary" style="margin-top:10px;border:0;color:#fff;font-weight:700">Startadresse speichern</button>
@@ -145,7 +145,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=1.8"></script>
-<script src="app.js?v=2.0.2-test"></script>
+<script src="app.js?v=2.0.3-test"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./service-worker.js").catch(console.error)}</script>
 </body>
