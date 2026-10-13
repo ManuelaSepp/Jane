@@ -227,8 +227,8 @@ function renderAktuelleFahrten(){
     const d=document.createElement("div");d.className="entry-trip-item";
     const info=document.createElement("div");
     info.innerHTML=`<strong>${htmlSicher(f.fahrziel)}</strong><small>Hin & Rück: ${format(f.kilometer)} km</small>`;
-    const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.disabled=!!state.jahresEintraege.find(x=>x.datum===state.originalDatum)?.kmBezahlt;b.onclick=()=>fahrtEntfernen(i);
-    d.append(info,b);g.appendChild(d);
+    const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.disabled=!!f.bezahlt||!!state.jahresEintraege.find(x=>x.datum===state.originalDatum)?.kmBezahlt;b.onclick=()=>fahrtEntfernen(i);
+    d.append(info,b);if(state.originalDatum&&f.id){const pay=document.createElement("button");pay.type="button";pay.textContent=f.bezahlt?"✓ Bezahlt":"Fahrt bezahlt";pay.disabled=!!f.bezahlt;pay.onclick=()=>leistungBezahlt("fahrt",f.id);d.append(pay);}g.appendChild(d);
   });
   const km=state.aktuelleFahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   $("fahrtGesamtKm").textContent=format(km)+" km";
@@ -248,7 +248,7 @@ function daten(){
     id:f.id||"",
     fahrzielId:f.fahrzielId||"",
     fahrziel:f.fahrziel||"",
-    kilometer:Number(f.kilometer||0)
+    kilometer:Number(f.kilometer||0),bezahlt:!!f.bezahlt,fixbetrag:f.fixbetrag==null?null:Number(f.fixbetrag)
   }));
   const kilometer=fahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   const fahrzielText=fahrten.map(f=>f.fahrziel).filter(Boolean).join(" · ");
@@ -422,7 +422,7 @@ function eintragLaden(e){
     id:String(f.id||""),
     fahrzielId:String(f.fahrzielId||""),
     fahrziel:aktuellerFahrzielName(f.fahrzielId,f.fahrziel),
-    kilometer:Number(f.kilometer||0)
+    kilometer:Number(f.kilometer||0),bezahlt:!!f.bezahlt,fixbetrag:f.fixbetrag==null?null:Number(f.fixbetrag)
   })):(e.fahrziel&&Number(e.kilometer||0)>0?[{
     id:"legacy_"+e.datum,
     fahrzielId:String(e.fahrzielId||""),
@@ -538,8 +538,16 @@ function geldWerte(eintraege){
    if(wert===null)unbekannt=true;else{stunden+=wert;if(e.bezahlt)bezahlt+=wert;else offen+=wert;}
   }
   const rate=kilometerSatzFuerDatum(e.datum);
+  const einzeln=Array.isArray(e.fahrten)?e.fahrten:[];
+  if(e.kmModus!=="pauschal"&&einzeln.length&&!e.kmBezahlt){
+   for(const f of einzeln){
+    const wert=f.bezahlt&&f.fixbetrag!=null?Number(f.fixbetrag):(rate==null?null:Number(f.kilometer||0)*rate);
+    if(wert===null)unbekannt=true;else{km+=wert;if(f.bezahlt)bezahlt+=wert;else offen+=wert;}
+   }
+  }else{
   const wert=e.kmBezahlt&&e.kmFix!=null?Number(e.kmFix):(e.kmModus==="pauschal"?Number(e.kmPauschal||0):(rate==null?(Number(e.kilometer||0)>0?null:0):Number(e.kilometer||0)*rate));
   if(wert===null)unbekannt=true;else{km+=wert;if(e.kmBezahlt)bezahlt+=wert;else offen+=wert;}
+  }
   for(const x of e.sonderleistungen||[]){const b=x.bezahlt&&x.fixbetrag!=null?Number(x.fixbetrag):Number(x.betrag||0);sonder+=b;if(x.bezahlt)bezahlt+=b;else offen+=b;}
  }
  return{bekannt:!unbekannt,gesamt:stunden+km+sonder,bezahlt,offen,stunden,km,sonder};
