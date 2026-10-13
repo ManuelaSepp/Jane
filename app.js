@@ -296,7 +296,7 @@ async function ladeJahr(jahr,leise=false){
         id:String(f.id||""),
         fahrzielId:String(f.fahrzielId||""),
         fahrziel:String(f.fahrziel||""),
-        kilometer:Number(f.kilometer||0)
+        kilometer:Number(f.kilometer||0),bezahlt:!!f.bezahlt,fixbetrag:f.fixbetrag==null?null:Number(f.fixbetrag)
       })):(e.fahrziel&&Number(e.kilometer||0)>0?[{
         id:"legacy_"+e.datum,
         fahrzielId:String(e.fahrzielId||""),
