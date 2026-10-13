@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const state={
   eintraege:[],fahrziele:[],kalenderDatum:new Date(),ausgewaehlt:null,originalDatum:null,
   cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
-  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],aktuelleFahrten:[]
+  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[]
 };
 let jsonpSequenz=0,ladeSequenz=0;
 
@@ -35,7 +35,7 @@ $("zahlungBearbeiten").onclick=zahlungBearbeitenStart;
 $("zahlungBezahlt").onclick=()=>zahlungsstatusSetzen(true);
 $("zahlungOffen").onclick=()=>zahlungsstatusSetzen(false);
 $("zahlungAbbrechen").onclick=zahlungBearbeitenEnde;
-$("lohnSpeichern").onclick=stundenlohnSpeichern;
+$("sonderVorlageSpeichern").onclick=sonderVorlagenSpeichern;renderSonderVorlagen();$("lohnSpeichern").onclick=stundenlohnSpeichern;$("kmSatzSpeichern").onclick=kilometersatzSpeichern;
 $("lohnMonat").onchange=renderStundenlohn;
 
 function pruefeKonfiguration(){
@@ -54,7 +54,7 @@ function speichereLokalenCache(jahr){
       eintraegeJahr:state.jahresEintraege,
       fahrziele:state.fahrziele,
       startAdresse:state.startAdresse,
-      stundenloehne:state.stundenloehne
+      stundenloehne:state.stundenloehne,kilometersaetze:state.kilometersaetze
     }));
   }catch(_){}
 }
@@ -67,7 +67,7 @@ function ladeLokalenCache(jahr){
     state.jahresEintraege=Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[];
     state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
     state.startAdresse=String(r.startAdresse||"");
-    state.stundenloehne=Array.isArray(r.stundenloehne)?r.stundenloehne:[];
+    state.stundenloehne=Array.isArray(r.stundenloehne)?r.stundenloehne:[];state.kilometersaetze=Array.isArray(r.kilometersaetze)?r.kilometersaetze:[];
     $("startAdresse").value=state.startAdresse;
     aktualisiereFahrzielNamen();
     monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);
@@ -80,7 +80,7 @@ async function init(){
   datum.value=iso(new Date());
   state.ausgewaehlt=datum.value;
   state.kalenderDatum=ausIso(datum.value);
-  $("lohnMonat").value=datum.value.slice(0,7);
+  $("lohnMonat").value=datum.value;
   stundenBerechnen();
 
   renderLeerzustand();
@@ -103,7 +103,7 @@ function renderLeerzustand(){
   $("monatOffen").textContent="0 h";
   $("monatBezahltEuro").textContent="–";
   $("monatOffenEuro").textContent="–";
-  $("monatVerdienst").textContent="–";$("monatSonder").textContent="0,00 €";
+  $("monatVerdienst").textContent="–";$("monatSonder").textContent="0,00 €";$("monatKmEuro").textContent="0,00 €";
   $("jahrStunden").textContent="0 h";
   $("jahrKm").textContent="0 km";
   renderKalender();
@@ -227,33 +227,66 @@ function renderAktuelleFahrten(){
     const d=document.createElement("div");d.className="entry-trip-item";
     const info=document.createElement("div");
     info.innerHTML=`<strong>${htmlSicher(f.fahrziel)}</strong><small>Hin & Rück: ${format(f.kilometer)} km</small>`;
-    const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.onclick=()=>fahrtEntfernen(i);
-    d.append(info,b);g.appendChild(d);
+    const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.disabled=!!f.bezahlt||!!state.jahresEintraege.find(x=>x.datum===state.originalDatum)?.kmBezahlt;b.onclick=()=>fahrtEntfernen(i);
+    d.append(info,b);if(state.originalDatum&&f.id&&$("kmModus").value==="km"){const pay=document.createElement("button");pay.type="button";pay.textContent=f.bezahlt?"✓ Bezahlt":"Fahrt bezahlt";pay.disabled=!!f.bezahlt;pay.onclick=()=>leistungBezahlt("fahrt",f.id);d.append(pay);}g.appendChild(d);
   });
   const km=state.aktuelleFahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   $("fahrtGesamtKm").textContent=format(km)+" km";
   gesamt.classList.remove("hidden");
 }
-function sonderleistungenLesen(){return [...document.querySelectorAll(".sonder-zeile")].map(r=>({name:r.querySelector(".sonder-name").value.trim(),betrag:Number(r.querySelector(".sonder-betrag").value.replace(",","."))}));}
+function sonderleistungenLesen(){return [...document.querySelectorAll(".sonder-zeile")].map(r=>({id:r.dataset.id,name:r.querySelector(".sonder-name").value.trim(),betrag:r.querySelector(".sonder-betrag").value.trim()===""?NaN:Number(r.querySelector(".sonder-betrag").value.replace(",","."))}));}
+function sonderVorlagenLesen(){try{const v=JSON.parse(localStorage.getItem("jane_sonder_vorlagen_v1")||"[]");return Array.isArray(v)?v.filter(x=>x&&typeof x.name==="string"&&Number.isFinite(Number(x.betrag))):[];}catch(_){return[]}}
+function sonderVorlageBetragAm(v,datum){const hist=Array.isArray(v.historie)?v.historie:[];let wert=Number(v.betrag);for(const h of [...hist].sort((a,b)=>a.ab.localeCompare(b.ab))){if(h.ab<=datum)wert=Number(h.betrag);else break;}return wert;}
+function sonderBetragAktuell(x,datum){
+ const gespeichert=Number(x.betrag||0);
+ if(x.bezahlt)return x.fixbetrag!=null?Number(x.fixbetrag):gespeichert;
+ const v=sonderVorlagenLesen().find(v=>v.name.toLocaleLowerCase("de")===String(x.name||"").toLocaleLowerCase("de"));
+ return v?sonderVorlageBetragAm(v,datum):gespeichert;
+}
+function sonderVorlagenSpeichern(){
+ const name=$("sonderVorlageName").value.trim(),betrag=Number($("sonderVorlageBetrag").value.replace(",",".")),ab=$("sonderVorlageDatum").value;
+ if(!name||!Number.isFinite(betrag)||betrag<0||!/^\d{4}-\d{2}-\d{2}$/.test(ab))return zeige("Bitte Bezeichnung, Betrag und Gültigkeitsdatum eingeben.","error");
+ const v=sonderVorlagenLesen(),idx=v.findIndex(x=>x.name.toLocaleLowerCase("de")===name.toLocaleLowerCase("de"));
+ if(idx>=0){const alt=v[idx];const historie=Array.isArray(alt.historie)?alt.historie.slice():[];const hi=historie.findIndex(x=>x.ab===ab);if(hi>=0)historie[hi]={ab,betrag};else historie.push({ab,betrag});v[idx]={...alt,name,betrag:alt.betrag,historie};}
+ else v.push({name,betrag,historie:[{ab,betrag}]});
+ localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(v));$("sonderVorlageName").value="";$("sonderVorlageBetrag").value="";$("sonderVorlageSpeichern").textContent="Vorlage speichern";renderSonderVorlagen();renderStatistik();zeige("Vorlage gespeichert. Offene Beträge werden nach Datum neu berechnet.","success");
+}
+function renderSonderVorlagen(){
+ const box=$("sonderVorlagenListe");box.replaceChildren();
+ for(const v of sonderVorlagenLesen()){
+  const row=document.createElement("div");row.className="entry-trip-item";
+  const txt=document.createElement("span");txt.textContent=v.name+" · "+euro(sonderVorlageBetragAm(v,iso(state.kalenderDatum)));
+  const edit=document.createElement("button");edit.type="button";edit.textContent="Bearbeiten";edit.onclick=()=>{$("sonderVorlageName").value=v.name;$("sonderVorlageDatum").value=iso(state.kalenderDatum);$("sonderVorlageBetrag").value=String(sonderVorlageBetragAm(v,iso(state.kalenderDatum))).replace(".",",");$("sonderVorlageSpeichern").textContent="Änderung speichern";$("sonderVorlageBetrag").focus();};
+  const del=document.createElement("button");del.type="button";del.textContent="Entfernen";del.onclick=()=>{localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(sonderVorlagenLesen().filter(x=>x.name!==v.name)));renderSonderVorlagen();};
+  row.append(txt,edit,del);box.append(row);
+ }
+}
 function sonderleistungHinzufuegen(x={}){
- const r=document.createElement("div");r.className="sonder-zeile";r.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0";
- const n=document.createElement("input");n.className="sonder-name";n.placeholder="Bezeichnung";n.maxLength=150;n.value=x.name||"";n.style.flex="2";
- const b=document.createElement("input");b.className="sonder-betrag";b.placeholder="Pauschale €";b.inputMode="decimal";b.value=x.betrag===undefined?"":String(x.betrag).replace(".",",");b.style.flex="1";
- const del=document.createElement("button");del.type="button";del.textContent="×";del.onclick=()=>r.remove();r.append(n,b,del);$("sonderListe").appendChild(r);
+ const r=document.createElement("div");r.className="sonder-zeile";r.dataset.id=x.id||("sonder_"+Date.now()+"_"+Math.random().toString(36).slice(2));r.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0";
+ const n=document.createElement("input");n.className="sonder-name";n.placeholder="Bezeichnung";n.maxLength=150;n.value=x.name||"";n.style.flex="2";n.disabled=!!x.bezahlt;
+ const auswahl=document.createElement("select");auswahl.className="sonder-vorlage";auswahl.disabled=!!x.bezahlt;
+ const leer=document.createElement("option");leer.value="";leer.textContent="Vorlage auswählen …";auswahl.appendChild(leer);
+ for(const v of sonderVorlagenLesen()){const o=document.createElement("option");o.value=v.name;o.textContent=v.name+" · "+euro(sonderVorlageBetragAm(v,datum.value));auswahl.appendChild(o);}
+ const frei=document.createElement("option");frei.value="__frei";frei.textContent="Freie Eingabe";auswahl.appendChild(frei);
+ auswahl.onchange=()=>{if(auswahl.value==="__frei"){n.value="";b.value="";n.focus();return;}const v=sonderVorlagenLesen().find(v=>v.name===auswahl.value);if(v){n.value=v.name;b.value=String(sonderVorlageBetragAm(v,datum.value)).replace(".",",");}};
+ n.addEventListener("change",()=>{const v=sonderVorlagenLesen().find(v=>v.name===n.value.trim());if(v)auswahl.value=v.name;});
+ if(sonderVorlagenLesen().some(v=>v.name===n.value))auswahl.value=n.value;
+ const b=document.createElement("input");b.className="sonder-betrag";b.placeholder="Pauschale €";b.inputMode="decimal";b.value=x.betrag===undefined?"":String(x.betrag).replace(".",",");b.style.flex="1";b.disabled=!!x.bezahlt;
+ const del=document.createElement("button");del.type="button";del.textContent="×";del.onclick=()=>r.remove();del.disabled=!!x.bezahlt;r.append(auswahl,n,b,del);if(state.originalDatum&&x.id){const pay=document.createElement("button");pay.type="button";pay.textContent=x.bezahlt?"✓ Bezahlt":"Als bezahlt";pay.disabled=!!x.bezahlt;pay.onclick=()=>leistungBezahlt("sonder",x.id);r.append(pay);}$("sonderListe").appendChild(r);
 }
 function sonderleistungenSetzen(items){$("sonderListe").replaceChildren();(Array.isArray(items)?items:[]).forEach(sonderleistungHinzufuegen);}
-function sonderSumme(e){return (Array.isArray(e.sonderleistungen)?e.sonderleistungen:[]).reduce((s,x)=>s+Number(x.betrag||0),0);}
+function sonderSumme(e){return (Array.isArray(e.sonderleistungen)?e.sonderleistungen:[]).reduce((s,x)=>s+sonderBetragAktuell(x,e.datum),0);}
 function daten(){
   const fahrten=state.aktuelleFahrten.map(f=>({
     id:f.id||"",
     fahrzielId:f.fahrzielId||"",
     fahrziel:f.fahrziel||"",
-    kilometer:Number(f.kilometer||0)
+    kilometer:Number(f.kilometer||0),bezahlt:!!f.bezahlt,fixbetrag:f.fixbetrag==null?null:Number(f.fixbetrag)
   }));
   const kilometer=fahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   const fahrzielText=fahrten.map(f=>f.fahrziel).filter(Boolean).join(" · ");
   return{
-    sonderleistungen:sonderleistungenLesen(),datum:datum.value,beginn:beginn.value,ende:ende.value,beginn2:beginn2.value,ende2:ende2.value,stunden:stundenBerechnen(),abwesenheit:abwesenheit.value,notiz:notiz.value,
+    sonderleistungen:sonderleistungenLesen(),kmModus:$("kmModus").value,kmPauschal:Number($("kmPauschal").value.replace(",","."))||0,datum:datum.value,beginn:beginn.value,ende:ende.value,beginn2:beginn2.value,ende2:ende2.value,stunden:stundenBerechnen(),abwesenheit:abwesenheit.value,notiz:notiz.value,
     fahrten,
     fahrzielId:fahrten.length===1?fahrten[0].fahrzielId:"",
     fahrziel:fahrzielText,
@@ -261,7 +294,7 @@ function daten(){
   };
 }
 function validiere(d){
-  if(!d.datum)return"Bitte Datum auswählen.";if(d.sonderleistungen.some(x=>!x.name||!Number.isFinite(x.betrag)||x.betrag<0))return"Bitte Sonderleistungen vollständig ausfüllen.";
+  if(!d.datum)return"Bitte Datum auswählen.";if(d.kmModus==="pauschal"&&(!Number.isFinite(d.kmPauschal)||d.kmPauschal<0))return"Ungültiger Fahrtkostenbetrag.";if(d.sonderleistungen.some(x=>!x.name||!Number.isFinite(x.betrag)||x.betrag<0))return"Bitte Sonderleistungen vollständig ausfüllen.";
   if(d.abwesenheit)return"";
   if(!d.beginn||!d.ende)return"Bitte Beginn und Ende eintragen.";
   if(!!d.beginn2!==!!d.ende2)return"Zweiter Dienst: Bitte Beginn und Ende vollständig eintragen.";
@@ -289,14 +322,14 @@ async function ladeJahr(jahr,leise=false){
       ...e,
       beginn:normalisiereZeit(e.beginn),
       ende:normalisiereZeit(e.ende),
-      beginn2:normalisiereZeit(e.beginn2),ende2:normalisiereZeit(e.ende2),sonderleistungen:Array.isArray(e.sonderleistungen)?e.sonderleistungen:[],
+      beginn2:normalisiereZeit(e.beginn2),ende2:normalisiereZeit(e.ende2),sonderleistungen:Array.isArray(e.sonderleistungen)?e.sonderleistungen:[],kmBezahlt:e.kmBezahlt===true,kmFix:e.kmFix==null?null:Number(e.kmFix),stundenFix:e.stundenFix==null?null:Number(e.stundenFix),kmModus:e.kmModus||"km",kmPauschal:Number(e.kmPauschal||0),
       stunden:Number(e.stunden||0),
       kilometer:Number(e.kilometer||0),
       fahrten:Array.isArray(e.fahrten)?e.fahrten.map(f=>({
         id:String(f.id||""),
         fahrzielId:String(f.fahrzielId||""),
         fahrziel:String(f.fahrziel||""),
-        kilometer:Number(f.kilometer||0)
+        kilometer:Number(f.kilometer||0),bezahlt:!!f.bezahlt,fixbetrag:f.fixbetrag==null?null:Number(f.fixbetrag)
       })):(e.fahrziel&&Number(e.kilometer||0)>0?[{
         id:"legacy_"+e.datum,
         fahrzielId:String(e.fahrzielId||""),
@@ -307,9 +340,9 @@ async function ladeJahr(jahr,leise=false){
     }));
     state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
     aktualisiereFahrzielNamen();
-    state.stundenloehne=(Array.isArray(r.stundenloehne)?r.stundenloehne:[])
+    state.kilometersaetze=(Array.isArray(r.kilometersaetze)?r.kilometersaetze:[]).sort((a,b)=>a.ab.localeCompare(b.ab));state.stundenloehne=(Array.isArray(r.stundenloehne)?r.stundenloehne:[])
       .map(x=>({ab:String(x.ab||""),lohn:Number(x.lohn||0)}))
-      .filter(x=>/^\d{4}-\d{2}$/.test(x.ab)&&x.lohn>0)
+      .filter(x=>/^\d{4}-\d{2}(-\d{2})?$/.test(x.ab)&&x.lohn>0)
       .sort((a,b)=>a.ab.localeCompare(b.ab));
     state.startAdresse=String(r.startAdresse||"");
     $("startAdresse").value=state.startAdresse;
@@ -332,16 +365,16 @@ function monatLokalSetzen(jahr,monat,rendern=true){
 function renderAlles(){renderKalender();renderWoche();renderStatistik();renderMonatsGrid()}
 function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 
-function schreiben(action,payload){
-  const body=new URLSearchParams({action,payload:JSON.stringify(payload),zeit:String(Date.now())});
-  fetch(SCRIPT_URL,{
-    method:"POST",
-    mode:"no-cors",
-    body,
-    cache:"no-store",
-    keepalive:true
-  }).catch(err=>console.error("Hintergrund-Speicherung fehlgeschlagen:",err));
-  return Promise.resolve();
+async function schreiben(action,payload){
+ const requestId="jane_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+ const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now())});
+ await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",body,cache:"no-store"});
+ for(let i=0;i<30;i++){
+  await new Promise(resolve=>setTimeout(resolve,900));
+  const result=await jsonp({action:"writeStatus",requestId});
+  if(result.done){if(!result.ok)throw new Error(result.message||"Speicherung fehlgeschlagen.");return;}
+ }
+ throw new Error("Keine Bestätigung vom Google Apps Script. Bitte Daten vor erneutem Speichern prüfen.");
 }
 
 async function speichern(e){
@@ -383,11 +416,11 @@ async function aktion(action,payload){
         datum:payload.datum,
         beginn:payload.abwesenheit?"":normalisiereZeit(payload.beginn),
         ende:payload.abwesenheit?"":normalisiereZeit(payload.ende),
-        beginn2:payload.abwesenheit?"":normalisiereZeit(payload.beginn2),ende2:payload.abwesenheit?"":normalisiereZeit(payload.ende2),sonderleistungen:payload.sonderleistungen||[],
+        beginn2:payload.abwesenheit?"":normalisiereZeit(payload.beginn2),ende2:payload.abwesenheit?"":normalisiereZeit(payload.ende2),sonderleistungen:(payload.sonderleistungen||[]).map(x=>{const alt=(alterEintrag?.sonderleistungen||[]).find(v=>v.id===x.id);return {...x,bezahlt:!!alt?.bezahlt,fixbetrag:alt?.bezahlt?alt.fixbetrag:null};}),kmBezahlt:alterEintrag?!!alterEintrag.kmBezahlt:false,kmFix:alterEintrag?alterEintrag.kmFix:null,stundenFix:alterEintrag?alterEintrag.stundenFix:null,kmModus:payload.kmModus||"km",kmPauschal:Number(payload.kmPauschal||0),
         stunden:payload.abwesenheit?0:Number(payload.stunden||0),
         abwesenheit:payload.abwesenheit||"",
         notiz:payload.notiz||"",
-        fahrten:Array.isArray(payload.fahrten)?payload.fahrten.map(f=>({...f,kilometer:Number(f.kilometer||0)})):[],
+        fahrten:Array.isArray(payload.fahrten)?payload.fahrten.map(f=>{const alt=(alterEintrag?.fahrten||[]).find(v=>v.id===f.id);return {...f,kilometer:Number(f.kilometer||0),bezahlt:!!alt?.bezahlt,fixbetrag:alt?.bezahlt?alt.fixbetrag:null};}):[],
         fahrzielId:payload.fahrzielId||"",
         fahrziel:payload.fahrziel||"",
         kilometer:Number(payload.kilometer||0),
@@ -416,13 +449,13 @@ function eintragLaden(e){
   datum.value=e.datum;
   beginn.value=normalisiereZeit(e.beginn);
   ende.value=normalisiereZeit(e.ende);beginn2.value=normalisiereZeit(e.beginn2);ende2.value=normalisiereZeit(e.ende2);
-  abwesenheit.value=e.abwesenheit||"";sonderleistungenSetzen(e.sonderleistungen);
+  abwesenheit.value=e.abwesenheit||"";sonderleistungenSetzen((e.sonderleistungen||[]).map(x=>({...x,betrag:sonderBetragAktuell(x,e.datum)})));$("kmModus").value=e.kmModus||"km";$("kmPauschal").value=e.kmPauschal||"";
   notiz.value=e.notiz||"";
   state.aktuelleFahrten=Array.isArray(e.fahrten)?e.fahrten.map(f=>({
     id:String(f.id||""),
     fahrzielId:String(f.fahrzielId||""),
     fahrziel:aktuellerFahrzielName(f.fahrzielId,f.fahrziel),
-    kilometer:Number(f.kilometer||0)
+    kilometer:Number(f.kilometer||0),bezahlt:!!f.bezahlt,fixbetrag:f.fixbetrag==null?null:Number(f.fixbetrag)
   })):(e.fahrziel&&Number(e.kilometer||0)>0?[{
     id:"legacy_"+e.datum,
     fahrzielId:String(e.fahrzielId||""),
@@ -430,11 +463,14 @@ function eintragLaden(e){
     kilometer:Number(e.kilometer||0)
   }]:[]);
   fahrziel.value="";
+  $("zweiterDienstDetails").open=!!(e.beginn2||e.ende2);
+  $("sonderDetails").open=!!(e.sonderleistungen||[]).length;
+  $("fahrtenDetails").open=!!(state.aktuelleFahrten.length||e.kmModus==="pauschal");
   handleAbwesenheit();
   renderFahrtInfo();
   renderAktuelleFahrten();
   stundenBerechnen();
-  editMode(true);
+  editMode(true);renderEinzelstatus(e);if(e.bezahlt){beginn.disabled=true;ende.disabled=true;beginn2.disabled=true;ende2.disabled=true;}if(e.kmBezahlt){$("kmModus").disabled=true;$("kmPauschal").disabled=true;$("fahrtHinzufuegen").disabled=true;}
   window.scrollTo({top:0,behavior:"smooth"});
 }
 function arbeitszeitKopieren(mitFahrten=false){
@@ -456,7 +492,7 @@ function arbeitszeitKopieren(mitFahrten=false){
   beginn.value=start;
   ende.value=schluss;beginn2.value=normalisiereZeit(beginn2.value);ende2.value=normalisiereZeit(ende2.value);
   abwesenheit.value="";
-  notiz.value="";sonderleistungenSetzen([]);
+  notiz.value="";sonderleistungenSetzen([]);$("kmModus").value="km";$("kmPauschal").value="";
   fahrziel.value="";
   state.aktuelleFahrten=kopierteFahrten;
 
@@ -473,11 +509,11 @@ function arbeitszeitKopieren(mitFahrten=false){
   datum.focus();
 }
 function resetForm(heute=true){
-  state.originalDatum=null;editMode(false);beginn.value="";ende.value="";beginn2.value="";ende2.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];sonderleistungenSetzen([]);
+  state.originalDatum=null;editMode(false);beginn.value="";ende.value="";beginn2.value="";ende2.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];sonderleistungenSetzen([]);$("kmModus").value="km";$("kmPauschal").value="";$("zweiterDienstDetails").open=false;$("sonderDetails").open=false;$("fahrtenDetails").open=false;
   if(heute){datum.value=iso(new Date());state.ausgewaehlt=datum.value}
   handleAbwesenheit();renderFahrtInfo();renderAktuelleFahrten();stundenBerechnen();
 }
-function editMode(a){save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;copyTimeTrips.hidden=!a;copyTimeTrips.disabled=a&&state.aktuelleFahrten.length===0;buttonRow.classList.toggle("edit-mode",a)}
+function editMode(a){$("einzelStatus").hidden=!a;if(!a){beginn.disabled=false;ende.disabled=false;beginn2.disabled=false;ende2.disabled=false;$("kmModus").disabled=false;$("kmPauschal").disabled=false;}save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;copyTimeTrips.hidden=!a;copyTimeTrips.disabled=a&&state.aktuelleFahrten.length===0;buttonRow.classList.toggle("edit-mode",a)}
 
 function renderKalender(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth(),first=new Date(y,m,1),last=new Date(y,m+1,0),offset=(first.getDay()+6)%7,map=new Map(state.eintraege.map(e=>[e.datum,e])),g=$("calendarGrid");
@@ -520,31 +556,42 @@ function euro(v){
   return Number(v||0).toLocaleString("de-DE",{style:"currency",currency:"EUR"});
 }
 function lohnFuerDatum(datumIso){
-  const monat=String(datumIso||"").slice(0,7);
+  const datum=String(datumIso||"");
   let lohn=null;
   for(const x of state.stundenloehne){
-    if(x.ab<=monat)lohn=Number(x.lohn);
+    if((x.ab.length===7?x.ab+"-01":x.ab)<=datum)lohn=Number(x.lohn);
     else break;
   }
   return lohn&&lohn>0?lohn:null;
 }
+function kilometerSatzFuerDatum(d){let s=null;for(const x of state.kilometersaetze){if((x.ab.length===7?x.ab+"-01":x.ab)<=d)s=Number(x.satz);else break;}return s;}
 function geldWerte(eintraege){
-  const arbeit=eintraege.filter(x=>!x.abwesenheit&&Number(x.stunden||0)>0);const sonder=eintraege.reduce((sum,x)=>sum+sonderSumme(x),0);
-  if(!arbeit.length)return{bekannt:true,gesamt:sonder,bezahlt:0,offen:sonder,sonder};
-  let gesamt=0,bezahlt=0,offen=0;
-  for(const e of arbeit){
-    const lohn=lohnFuerDatum(e.datum);
-    if(!lohn)return{bekannt:false,gesamt:0,bezahlt:0,offen:0};
-    const betrag=Number(e.stunden||0)*lohn;
-    gesamt+=betrag;
-    if(e.bezahlt)bezahlt+=betrag;else offen+=betrag;
+ let stunden=0,km=0,sonder=0,bezahlt=0,offen=0,unbekannt=false;
+ for(const e of eintraege){
+  if(!e.abwesenheit&&Number(e.stunden||0)>0){
+   const lohn=lohnFuerDatum(e.datum);
+   const wert=e.bezahlt&&e.stundenFix!=null?Number(e.stundenFix):(lohn==null?null:Number(e.stunden)*lohn);
+   if(wert===null)unbekannt=true;else{stunden+=wert;if(e.bezahlt)bezahlt+=wert;else offen+=wert;}
   }
-  return{bekannt:true,gesamt:gesamt+sonder,bezahlt,offen:offen+sonder,sonder};
+  const rate=kilometerSatzFuerDatum(e.datum);
+  const einzeln=Array.isArray(e.fahrten)?e.fahrten:[];
+  if(e.kmModus!=="pauschal"&&einzeln.length&&!e.kmBezahlt){
+   for(const f of einzeln){
+    const wert=f.bezahlt&&f.fixbetrag!=null?Number(f.fixbetrag):(rate==null?null:Number(f.kilometer||0)*rate);
+    if(wert===null)unbekannt=true;else{km+=wert;if(f.bezahlt)bezahlt+=wert;else offen+=wert;}
+   }
+  }else{
+  const wert=e.kmBezahlt&&e.kmFix!=null?Number(e.kmFix):(e.kmModus==="pauschal"?Number(e.kmPauschal||0):(rate==null?(Number(e.kilometer||0)>0?null:0):Number(e.kilometer||0)*rate));
+  if(wert===null)unbekannt=true;else{km+=wert;if(e.kmBezahlt)bezahlt+=wert;else offen+=wert;}
+  }
+  for(const x of e.sonderleistungen||[]){const b=sonderBetragAktuell(x,e.datum);sonder+=b;if(x.bezahlt)bezahlt+=b;else offen+=b;}
+ }
+ return{bekannt:!unbekannt,gesamt:stunden+km+sonder,bezahlt,offen,stunden,km,sonder};
 }
 function renderStundenlohn(){
-  const monat=$("lohnMonat").value||iso(state.kalenderDatum).slice(0,7);
-  const probe=monat+"-01",lohn=lohnFuerDatum(probe);
-  $("lohnAktuell").textContent=lohn?("Für diesen Monat gültig: "+euro(lohn)+" / Stunde"):"Für diesen Monat ist noch kein Stundenlohn hinterlegt.";
+  const monat=$("lohnMonat").value||iso(state.kalenderDatum);
+  const probe=monat,lohn=lohnFuerDatum(probe);
+  $("lohnAktuell").textContent=lohn?("Für dieses Datum gültig: "+euro(lohn)+" / Stunde"):"Für dieses Datum ist noch kein Stundenlohn hinterlegt.";
   const g=$("lohnHistorie");g.innerHTML="";
   if(!state.stundenloehne.length){
     g.innerHTML='<div class="export-hint">Noch kein Stundenlohn gespeichert.</div>';
@@ -552,25 +599,22 @@ function renderStundenlohn(){
   }
   [...state.stundenloehne].reverse().forEach(x=>{
     const d=document.createElement("div");d.className="wage-item";
-    const [j,m]=x.ab.split("-");
-    d.innerHTML=`<span>ab ${m}/${j}</span><strong>${euro(x.lohn)} / h</strong>`;
+    const [j,m,t]=x.ab.split("-");
+    d.innerHTML=`<span>ab ${t||"01"}.${m}.${j}</span><strong>${euro(x.lohn)} / h</strong>`;
     g.appendChild(d);
   });
 }
 async function stundenlohnSpeichern(){
-  const ab=$("lohnMonat").value,roh=String($("stundenlohn").value||"").trim().replace(",","."),
-        lohn=Number(roh);
-  if(!/^\d{4}-\d{2}$/.test(ab))return zeige("Bitte den Monat für den Stundenlohn auswählen.","error");
-  if(!(lohn>0))return zeige("Bitte einen gültigen Stundenlohn eintragen.","error");
-  const vorhanden=state.stundenloehne.find(x=>x.ab===ab);
-  if(vorhanden)vorhanden.lohn=lohn;else state.stundenloehne.push({ab,lohn});
-  state.stundenloehne.sort((a,b)=>a.ab.localeCompare(b.ab));
+ const ab=$("lohnMonat").value,lohn=Number(String($("stundenlohn").value||"").replace(",","."));
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(ab)||!(lohn>0))return zeige("Bitte gültiges Datum und Stundenlohn eintragen.","error");
+ try{
   await schreiben("saveStundenlohn",{ab,lohn});
-  $("stundenlohn").value="";
-  renderStundenlohn();renderStatistik();
-  zeige("Stundenlohn ab "+ab.slice(5,7)+"/"+ab.slice(0,4)+" gespeichert ✅","success");
+  const x=state.stundenloehne.find(v=>v.ab===ab);if(x)x.lohn=lohn;else state.stundenloehne.push({ab,lohn});
+  state.stundenloehne.sort((a,b)=>a.ab.localeCompare(b.ab));
+  $("stundenlohn").value="";renderStundenlohn();renderStatistik();
+  zeige("Stundenlohn gespeichert. Offene Beträge neu berechnet.","success");
+ }catch(e){zeige("Stundenlohn nicht gespeichert: "+e.message,"error");}
 }
-
 function zahlungBearbeitenStart(){
   state.zahlungsModus=true;
   state.zahlAuswahl.clear();
@@ -587,24 +631,61 @@ function zahlungBearbeitenEnde(){
   renderKalender();
   zeige("","");
 }
+function zahlungsPositionen(){
+ const result=[];
+ for(const datum of [...state.zahlAuswahl].sort()){
+  const e=state.jahresEintraege.find(x=>x.datum===datum);
+  if(!e||e.abwesenheit)continue;
+  const add=(art,id,label,bezahlt)=>{if(!bezahlt)result.push({datum,art,id:id||"",label:datum.slice(8,10)+"."+datum.slice(5,7)+". – "+label});};
+  if(Number(e.stunden||0)>0)add("stunden","","Arbeitsstunden ("+format(e.stunden)+" h)",e.bezahlt);
+  if(e.kmModus==="pauschal")add("km","","Fahrtkosten-Pauschale ("+euro(e.kmPauschal)+")",e.kmBezahlt);
+  else if(e.kmBezahlt){/* Tagesfahrtkosten bereits festgeschrieben */}
+  else if(Array.isArray(e.fahrten)&&e.fahrten.length){
+    e.fahrten.forEach(f=>add("fahrt",f.id,"Fahrt: "+(f.fahrziel||"ohne Ziel")+" ("+format(f.kilometer)+" km)",f.bezahlt));
+  }else if(Number(e.kilometer||0)>0)add("km","","Fahrtkosten ("+format(e.kilometer)+" km)",e.kmBezahlt);
+  (e.sonderleistungen||[]).forEach(x=>add("sonder",x.id,"Sonderleistung: "+x.name+" ("+euro(sonderBetragAktuell(x,datum))+")",x.bezahlt));
+ }
+ return result;
+}
 function renderZahlungsAuswahl(){
-  const n=state.zahlAuswahl.size;
-  $("zahlungAuswahlText").textContent=n===1?"1 Arbeitstag ausgewählt":n+" Arbeitstage ausgewählt";
-  $("zahlungBezahlt").disabled=n===0;
-  $("zahlungOffen").disabled=n===0;
+ const n=state.zahlAuswahl.size;
+ $("zahlungAuswahlText").textContent=n===1?"1 Arbeitstag ausgewählt":n+" Arbeitstage ausgewählt";
+ const g=$("zahlungLeistungen");g.replaceChildren();
+ const positionen=zahlungsPositionen();
+ if(!n)g.textContent="Wähle zuerst einen oder mehrere Tage im Kalender.";
+ else if(!positionen.length)g.textContent="Keine offenen Leistungen an diesen Tagen.";
+ else{
+  const alle=document.createElement("label");alle.style.cssText="display:flex;gap:8px;align-items:center;margin-bottom:9px;font-weight:bold";
+  const check=document.createElement("input");check.type="checkbox";check.checked=true;check.id="zahlungAllePositionen";
+  alle.append(check,document.createTextNode("Alle offenen Leistungen auswählen"));g.appendChild(alle);
+  positionen.forEach((p,i)=>{
+   const label=document.createElement("label");label.style.cssText="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #e5e7eb;font-weight:normal";
+   const c=document.createElement("input");c.type="checkbox";c.checked=true;c.className="zahlung-position";c.dataset.index=String(i);
+   label.append(c,document.createTextNode(p.label));g.appendChild(label);
+   c.onchange=()=>{const list=[...g.querySelectorAll(".zahlung-position")];check.checked=list.every(x=>x.checked);$("zahlungBezahlt").disabled=!list.some(x=>x.checked)};
+  });
+  check.onchange=()=>{g.querySelectorAll(".zahlung-position").forEach(x=>x.checked=check.checked);$("zahlungBezahlt").disabled=!check.checked};
+ }
+ $("zahlungBezahlt").disabled=!positionen.length;
+ $("zahlungOffen").disabled=true;
 }
 async function zahlungsstatusSetzen(bezahlt){
-  const daten=[...state.zahlAuswahl];
-  if(!daten.length)return;
-  state.jahresEintraege.forEach(e=>{if(daten.includes(e.datum)&&!e.abwesenheit)e.bezahlt=bezahlt});
-  state.eintraege.forEach(e=>{if(daten.includes(e.datum)&&!e.abwesenheit)e.bezahlt=bezahlt});
-  await schreiben("setBezahlt",{daten,bezahlt});
-  const anzahl=daten.length;
-  zahlungBearbeitenEnde();
-  renderAlles();
-  zeige(anzahl+(anzahl===1?" Tag ":" Tage ")+(bezahlt?"als bezahlt markiert ✅":"wieder als offen markiert ✅"),"success");
+ if(!bezahlt)return zeige("Bezahlte Leistungen bleiben festgeschrieben.","error");
+ const positionen=zahlungsPositionen();
+ const selected=[...$("zahlungLeistungen").querySelectorAll(".zahlung-position:checked")].map(c=>positionen[Number(c.dataset.index)]).filter(Boolean);
+ if(!selected.length)return zeige("Bitte mindestens eine offene Leistung auswählen.","error");
+ $("zahlungBezahlt").disabled=true;
+ let erfolg=0;
+ try{
+  for(const p of selected){await schreiben("setLeistungBezahlt",{datum:p.datum,art:p.art,id:p.id,bezahlt:true});erfolg++;}
+  zahlungBearbeitenEnde();await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  zeige(erfolg+" Leistungen als bezahlt bestätigt.","success");
+ }catch(e){
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  renderZahlungsAuswahl();
+  zeige(erfolg+" von "+selected.length+" Leistungen gespeichert. Fehler: "+e.message,"error");
+ }
 }
-
 function tooltipFuerEintrag(e){
   const z=[ausIso(e.datum).toLocaleDateString("de-DE",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})];
   if(e.abwesenheit)z.push(e.abwesenheit);
@@ -621,7 +702,7 @@ function tooltipFuerEintrag(e){
   }else if(e.fahrziel){
     z.push("Fahrt: "+e.fahrziel+" · "+format(e.kilometer)+" km");
   }
-  if(sonderSumme(e))z.push("Sonderleistungen: "+e.sonderleistungen.map(x=>x.name+" ("+euro(x.betrag)+")").join(", "));if(e.notiz)z.push("Notiz: "+e.notiz);
+  if(sonderSumme(e))z.push("Sonderleistungen: "+e.sonderleistungen.map(x=>x.name+" ("+euro(sonderBetragAktuell(x,e.datum))+")").join(", "));if(e.notiz)z.push("Notiz: "+e.notiz);
   return z.join("\n");
 }
 function tooltipZeigen(el,text){const t=$("calendarTooltip");t.textContent=text;t.classList.add("visible");const r=el.getBoundingClientRect();tooltipPositionieren(r.left+r.width/2,r.top)}
@@ -657,6 +738,33 @@ function jahresWerte(jahr){
     offenStunden:arbeit.filter(x=>!x.bezahlt).reduce((s,x)=>s+Number(x.stunden||0),0)
   };
 }
+function renderEinzelstatus(e){
+ const box=$("einzelStatus");box.replaceChildren();
+ for(const [art,name,paid] of [["stunden","Arbeitsstunden",!!e.bezahlt],["km","Fahrtkosten",!!e.kmBezahlt]]){
+  const b=document.createElement("button");b.type="button";b.textContent=name+": "+(paid?"✓ bezahlt":"Als bezahlt markieren");b.disabled=paid;b.onclick=()=>leistungBezahlt(art);box.appendChild(b);
+ }
+}
+async function leistungBezahlt(art,id=""){
+ if(!state.originalDatum)return;
+ if(!confirm("Diese Leistung endgültig als bezahlt festschreiben?"))return;
+ try{
+  await schreiben("setLeistungBezahlt",{datum:state.originalDatum,art,id,bezahlt:true});
+  zeige("Zahlungsstatus bestätigt.","success");
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  const e=state.jahresEintraege.find(x=>x.datum===state.originalDatum);
+  if(e)eintragLaden(e);
+ }catch(err){zeige("Zahlung konnte nicht bestätigt werden: "+err.message,"error");}
+}
+async function kilometersatzSpeichern(){
+ const ab=$("kmSatzMonat").value,satz=Number($("kmSatzWert").value.replace(",","."));
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(ab)||!Number.isFinite(satz)||satz<0)return zeige("Ungültiger Kilometersatz.","error");
+ try{
+  await schreiben("saveKilometersatz",{ab,satz});
+  const x=state.kilometersaetze.find(v=>v.ab===ab);if(x)x.satz=satz;else state.kilometersaetze.push({ab,satz});
+  state.kilometersaetze.sort((a,b)=>a.ab.localeCompare(b.ab));renderStatistik();
+  zeige("Kilometersatz gespeichert.","success");
+ }catch(err){zeige("Kilometersatz nicht gespeichert: "+err.message,"error");}
+}
 function renderStatistik(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth()+1,mw=monatsWerte(y,m),jw=jahresWerte(y);
   $("monatStunden").textContent=format(mw.stunden)+" h";
@@ -665,7 +773,7 @@ function renderStatistik(){
   $("monatOffen").textContent=format(mw.offenStunden)+" h";
   $("monatBezahltEuro").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.bezahlt):"–";
   $("monatOffenEuro").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.offen):"–";
-  $("monatVerdienst").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.gesamt):"–";$("monatSonder").textContent=euro(mw.geld.sonder||0);
+  $("monatVerdienst").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.gesamt):"–";$("monatSonder").textContent=euro(mw.geld.sonder||0);$("monatKmEuro").textContent=euro(mw.geld.km||0);
   $("jahrStunden").textContent=format(jw.stunden)+" h";
   $("jahrKm").textContent=format(jw.km)+" km";
 }
@@ -679,7 +787,7 @@ function renderMonatsGrid(){
   });
 }
 async function monatWechseln(delta){
-  const altJ=state.kalenderDatum.getFullYear();state.kalenderDatum=new Date(altJ,state.kalenderDatum.getMonth()+delta,1);const neuJ=state.kalenderDatum.getFullYear();state.ausgewaehlt=iso(state.kalenderDatum);$("lohnMonat").value=iso(state.kalenderDatum).slice(0,7);renderStundenlohn();
+  const altJ=state.kalenderDatum.getFullYear();state.kalenderDatum=new Date(altJ,state.kalenderDatum.getMonth()+delta,1);const neuJ=state.kalenderDatum.getFullYear();state.ausgewaehlt=iso(state.kalenderDatum);$("lohnMonat").value=iso(state.kalenderDatum);renderStundenlohn();
   if(state.cacheJahr===neuJ){monatLokalSetzen(neuJ,state.kalenderDatum.getMonth()+1,true)}else if(pruefeKonfiguration())await ladeJahr(neuJ);
 }
 function datumGeaendert(){if(!datum.value)return;state.ausgewaehlt=datum.value;const d=ausIso(datum.value);if(d.getFullYear()!==state.kalenderDatum.getFullYear()||d.getMonth()!==state.kalenderDatum.getMonth()){state.kalenderDatum=new Date(d.getFullYear(),d.getMonth(),1);if(state.cacheJahr===d.getFullYear())monatLokalSetzen(d.getFullYear(),d.getMonth()+1,true);else if(pruefeKonfiguration())ladeJahr(d.getFullYear())}else{renderKalender();renderWoche()}}
@@ -717,29 +825,56 @@ async function fahrzielLoeschen(z){
 function exportKontext(){
   const art=$("exportZeitraum").value,y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth()+1;
   const daten=art==="monat"?monatsWerte(y,m).daten:state.jahresEintraege.filter(e=>ausIso(e.datum).getFullYear()===y);
-  const stunden=daten.reduce((s,e)=>s+Number(e.stunden||0),0),km=daten.reduce((s,e)=>s+Number(e.kilometer||0),0);
-  return{art,jahr:y,monat:m,titel:art==="monat"?state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"}):"Jahr "+y,stunden,km,daten:[...daten].sort((a,b)=>a.datum.localeCompare(b.datum))};
+  const stunden=daten.reduce((s,e)=>s+Number(e.stunden||0),0),km=daten.reduce((s,e)=>s+Number(e.kilometer||0),0),geld=geldWerte(daten);
+  return{art,jahr:y,monat:m,titel:art==="monat"?state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"}):"Jahr "+y,stunden,km,geld,daten:[...daten].sort((a,b)=>a.datum.localeCompare(b.datum))};
 }
-function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",beginn2:e.beginn2||"",ende2:e.ende2||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0),bezahlt:!e.abwesenheit&&e.bezahlt===true,sonderleistungen:e.sonderleistungen||[],sonder:sonderSumme(e)}}
+function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",beginn2:e.beginn2||"",ende2:e.ende2||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0),bezahlt:!e.abwesenheit&&e.bezahlt===true,sonderleistungen:(e.sonderleistungen||[]).map(x=>({...x,betrag:sonderBetragAktuell(x,e.datum)})),sonder:sonderSumme(e),geld:geldWerte([e])}}
 async function exportExcel(){
   try{
     if(typeof ExcelJS==="undefined")throw new Error("Excel-Modul konnte nicht geladen werden.");const x=exportKontext(),zeilen=x.daten.map(exportZeile),wb=new ExcelJS.Workbook(),ws=wb.addWorksheet("Arbeitszeit");
-    ws.mergeCells("A1:K1");ws.getCell("A1").value="Arbeitszeit & Fahrten – "+x.titel;ws.getCell("A1").font={bold:true,size:16};ws.getCell("A1").alignment={horizontal:"center"};
+    ws.mergeCells("A1:N1");ws.getCell("A1").value="Arbeitszeit & Fahrten – "+x.titel;ws.getCell("A1").font={bold:true,size:16};ws.getCell("A1").alignment={horizontal:"center"};
     ws.mergeCells("A3:C3");ws.getCell("A3").value="Stunden gesamt";ws.getCell("D3").value=x.stunden;ws.getCell("D3").numFmt='0.00 "h"';
     ws.mergeCells("E3:G3");ws.getCell("E3").value="Kilometer gesamt";ws.getCell("H3").value=x.km;ws.getCell("H3").numFmt='0.0 "km"';
     ["A3","D3","E3","H3"].forEach(c=>ws.getCell(c).font={bold:true});
-    const headerRow=5,headers=["Datum","Tag","Beginn","Ende","Stunden","Art","Fahrziel","km","Bezahlt","Sonderleistungen","Pauschalen €"];
+    const headerRow=5,headers=["Datum","Tag","Beginn","Ende","Stunden","Art","Fahrziel","km","Bezahlt","Sonderleistungen","Pauschalen €","Gesamt €","Bezahlt €","Offen €"];
     headers.forEach((h,i)=>{const c=ws.getCell(headerRow,i+1);c.value=h;c.font={bold:true,color:{argb:"FFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"70AD47"}};c.alignment={horizontal:"center",vertical:"middle"}});
-    zeilen.forEach((z,i)=>{const row=headerRow+1+i,serial=Date.UTC(z.datum.getFullYear(),z.datum.getMonth(),z.datum.getDate())/86400000+25569;ws.getCell(row,1).value=serial;ws.getCell(row,1).numFmt="dd.mm.yyyy";ws.getCell(row,2).value=z.wochentag;ws.getCell(row,3).value=z.beginn+(z.beginn2?" / "+z.beginn2:"");ws.getCell(row,4).value=z.ende+(z.ende2?" / "+z.ende2:"");ws.getCell(row,5).value=z.stunden;ws.getCell(row,5).numFmt='0.00';ws.getCell(row,6).value=z.art;ws.getCell(row,7).value=z.fahrziel;ws.getCell(row,8).value=z.kilometer;ws.getCell(row,8).numFmt='0.0';ws.getCell(row,9).value=z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):"";ws.getCell(row,10).value=z.sonderleistungen.map(x=>x.name).join(" · ");ws.getCell(row,11).value=z.sonder;for(let c=1;c<=11;c++)ws.getCell(row,c).alignment={horizontal:"center",vertical:"middle"}});
-    const widths=[12,10,13,13,10,12,Math.max(14,...zeilen.map(z=>z.fahrziel.length+2)),10,10,24,14];ws.columns=widths.map(width=>({width}));ws.views=[{state:"frozen",ySplit:headerRow}];ws.autoFilter={from:{row:headerRow,column:1},to:{row:headerRow,column:11}};
-    const buffer=await wb.xlsx.writeBuffer(),blob=new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=x.art==="monat"?`Arbeitszeit_Fahrten_${x.jahr}-${String(x.monat).padStart(2,"0")}.xlsx`:`Arbeitszeit_Fahrten_${x.jahr}.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    zeilen.forEach((z,i)=>{const row=headerRow+1+i,serial=Date.UTC(z.datum.getFullYear(),z.datum.getMonth(),z.datum.getDate())/86400000+25569;ws.getCell(row,1).value=serial;ws.getCell(row,1).numFmt="dd.mm.yyyy";ws.getCell(row,2).value=z.wochentag;ws.getCell(row,3).value=z.beginn+(z.beginn2?" / "+z.beginn2:"");ws.getCell(row,4).value=z.ende+(z.ende2?" / "+z.ende2:"");ws.getCell(row,5).value=z.stunden;ws.getCell(row,5).numFmt='0.00';ws.getCell(row,6).value=z.art;ws.getCell(row,7).value=z.fahrziel;ws.getCell(row,8).value=z.kilometer;ws.getCell(row,8).numFmt='0.0';ws.getCell(row,9).value=z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):"";ws.getCell(row,10).value=z.sonderleistungen.map(x=>x.name).join(" · ");ws.getCell(row,11).value=z.sonder;for(let k=0;k<3;k++){const c=ws.getCell(row,12+k);c.value=z.geld.bekannt?[z.geld.gesamt,z.geld.bezahlt,z.geld.offen][k]:null;c.numFmt='#,##0.00 "€"';}for(let c=1;c<=14;c++)ws.getCell(row,c).alignment={horizontal:"center",vertical:"middle"}});
+    const widths=[12,10,13,13,10,12,Math.max(14,...zeilen.map(z=>z.fahrziel.length+2)),10,10,24,14,14,14,14];ws.columns=widths.map(width=>({width}));ws.views=[{state:"frozen",ySplit:headerRow}];ws.autoFilter={from:{row:headerRow,column:1},to:{row:headerRow,column:14}};
+    ws.getCell("J3").value="Gesamtbetrag";ws.getCell("K3").value=x.geld.bekannt?x.geld.gesamt:null;ws.getCell("L3").value="Bezahlt";ws.getCell("M3").value=x.geld.bekannt?x.geld.bezahlt:null;ws.getCell("L4").value="Offen";ws.getCell("M4").value=x.geld.bekannt?x.geld.offen:null;["K3","M3","M4"].forEach(c=>ws.getCell(c).numFmt='#,##0.00 "€"');const buffer=await wb.xlsx.writeBuffer(),blob=new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=x.art==="monat"?`Arbeitszeit_Fahrten_${x.jahr}-${String(x.monat).padStart(2,"0")}.xlsx`:`Arbeitszeit_Fahrten_${x.jahr}.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch(e){zeige("Excel-Export: "+e.message,"error")}
+}
+function pdfZahlungen(daten){
+ const listen=[[],[]];
+ const add=(e,name,wert,paid)=>{if(wert!=null&&Number.isFinite(wert)&&wert>0)listen[paid?1:0].push([ausIso(e.datum).toLocaleDateString("de-DE"),name,wert]);};
+ for(const e of daten){
+  if(e.abwesenheit)continue;
+  const h=Number(e.stunden||0),lohn=lohnFuerDatum(e.datum),rate=kilometerSatzFuerDatum(e.datum);
+  if(h>0)add(e,"Arbeitsstunden ("+format(h)+" h)",e.bezahlt&&e.stundenFix!=null?Number(e.stundenFix):lohn==null?null:h*lohn,!!e.bezahlt);
+  const fahrten=Array.isArray(e.fahrten)?e.fahrten:[];
+  if(e.kmModus!=="pauschal"&&fahrten.length&&!e.kmBezahlt){
+   for(const f of fahrten)add(e,"Fahrt: "+(f.fahrziel||"ohne Ziel"),f.bezahlt&&f.fixbetrag!=null?Number(f.fixbetrag):rate==null?null:Number(f.kilometer||0)*rate,!!f.bezahlt);
+  }else{
+   const km=Number(e.kilometer||0),wert=e.kmBezahlt&&e.kmFix!=null?Number(e.kmFix):e.kmModus==="pauschal"?Number(e.kmPauschal||0):rate==null?(km?null:0):km*rate;
+   add(e,e.kmModus==="pauschal"?"Fahrtkosten-Pauschale":"Fahrtkosten ("+format(km)+" km)",wert,!!e.kmBezahlt);
+  }
+  for(const x of e.sonderleistungen||[])add(e,"Sonderleistung: "+x.name,sonderBetragAktuell(x,e.datum),!!x.bezahlt);
+ }
+ return '<div class="zahlungen-grid">'+listen.map((items,i)=>'<section class="zahlungen"><h2>'+(i?"Bereits bezahlt":"Noch offen")+'</h2><table><thead><tr><th>Datum</th><th>Leistung</th><th>Betrag</th></tr></thead><tbody>'+items.map(a=>'<tr><td>'+htmlSicher(a[0])+'</td><td>'+htmlSicher(a[1])+'</td><td>'+htmlSicher(euro(a[2]))+'</td></tr>').join("")+'</tbody></table></section>').join("")+'</div>';
 }
 function exportPdf(){
   try{
     const x=exportKontext(),zeilen=x.daten.map(exportZeile),fenster=window.open("","_blank");if(!fenster)throw new Error("PDF-Fenster konnte nicht geöffnet werden.");
-    const body=zeilen.map(z=>`<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td>${htmlSicher(z.beginn+(z.beginn2?" / "+z.beginn2:""))}</td><td>${htmlSicher(z.ende+(z.ende2?" / "+z.ende2:""))}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td>${htmlSicher(z.art)}</td><td>${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td><td>${htmlSicher(z.sonderleistungen.map(x=>x.name).join(" · "))}</td><td>${htmlSicher(euro(z.sonder))}</td></tr>`).join("");
-    fenster.document.open();fenster.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Arbeitszeit & Fahrten</title><style>@page{size:A4 landscape;margin:11mm}body{font-family:Arial,sans-serif;color:#222;margin:0}h1{font-size:20px;margin:0 0 4px}.meta{font-size:11px;color:#666;margin-bottom:12px}.summary{display:flex;gap:10px;margin:0 0 14px}.summary div{border:1px solid #ccd3d9;border-radius:8px;padding:7px 10px;min-width:160px}.summary span{display:block;font-size:10px;color:#666}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:9.5px;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}th,td{border-bottom:1px solid #d6d6d6;padding:5px;vertical-align:top;text-align:center}th{background:#eef3f7}th:nth-child(7),td:nth-child(7){width:22%}.num{white-space:nowrap}.footer{margin-top:10px;font-size:9px;color:#777}</style></head><body><h1>Arbeitszeit & Fahrten – ${htmlSicher(x.titel)}</h1><div class="meta">Erstellt am ${htmlSicher(new Date().toLocaleDateString("de-DE"))}</div><div class="summary"><div><span>Stunden gesamt</span><strong>${htmlSicher(format(x.stunden))} h</strong></div><div><span>Kilometer gesamt</span><strong>${htmlSicher(format(x.km))} km</strong></div></div><table><thead><tr><th>Datum</th><th>Tag</th><th>Beginn</th><th>Ende</th><th>Stunden</th><th>Art</th><th>Fahrziel</th><th>km</th><th>Bezahlt</th><th>Sonderleistungen</th><th>Pauschalen</th></tr></thead><tbody>${body}</tbody></table><div class="footer">Arbeitszeit & Fahrten</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));<\/script></body></html>`);fenster.document.close();
+    const body=zeilen.map(z=>{
+      const original=x.daten.find(e=>e.datum===z.datum.toLocaleDateString("sv-SE"));
+      const zeit=(a,b)=>a&&b?htmlSicher(a+" – "+b):"–";
+      const dienste='<div><strong>1. Dienst:</strong> '+zeit(z.beginn,z.ende)+'</div>'+(z.beginn2||z.ende2?'<div><strong>2. Dienst:</strong> '+zeit(z.beginn2,z.ende2)+'</div>':'');
+      const lohn=original&&original.bezahlt&&original.stundenFix!=null&&z.stunden>0?Number(original.stundenFix)/z.stunden:lohnFuerDatum(original?.datum||"");
+      const kmSatz=original?(original.kmBezahlt&&original.kmFix!=null&&Number(original.kilometer)>0?Number(original.kmFix)/Number(original.kilometer):kilometerSatzFuerDatum(original.datum)):null;
+      const stundenText=z.art==="Arbeit"&&z.stunden>0?(lohn==null?"–":euro(lohn)+" / h"):"–";
+      const kmText=original&&original.kmModus==="pauschal"?"Pauschale: "+euro(Number(original.kmPauschal||0)):kmSatz==null?"–":euro(kmSatz)+" / km";
+      return `<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td class="dienst">${dienste}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td class="num">${htmlSicher(stundenText)}</td><td class="ziel">${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td class="num">${htmlSicher(kmText)}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td><td>${htmlSicher(z.sonderleistungen.map(x=>x.name).join(" · "))}</td><td class="num">${htmlSicher(euro(z.sonder))}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.gesamt)):"–"}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.bezahlt)):"–"}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.offen)):"–"}</td></tr>`;
+    }).join("");
+    fenster.document.open();fenster.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Arbeitszeit & Fahrten</title><style>@page{size:A4 landscape;margin:11mm}body{font-family:Arial,sans-serif;color:#222;margin:0}h1{font-size:20px;margin:0 0 4px}.meta{font-size:11px;color:#666;margin-bottom:12px}.summary{display:flex;gap:10px;margin:0 0 14px}.summary div{border:1px solid #ccd3d9;border-radius:8px;padding:7px 10px;min-width:160px}.summary span{display:block;font-size:10px;color:#666}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}th,td{border-bottom:1px solid #d6d6d6;padding:4px 2px;vertical-align:top;text-align:center}th{font-size:7.5px}th{background:#eef3f7}th:nth-child(3),td:nth-child(3){width:15%}th:nth-child(4),td:nth-child(4){width:2.5%}th:nth-child(6),td:nth-child(6){width:18%}.dienst{text-align:left;line-height:1.6}.ziel{overflow-wrap:anywhere}.num{white-space:nowrap}.sum-row{background:#eef3f7;border-top:2px solid #aab5c0;font-size:9px}.sum-row td{padding:7px 2px}.zahlungen-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:16px}.zahlungen{min-width:0;margin-top:0}.zahlungen h2{font-size:12px}.zahlungen table{table-layout:auto}.zahlungen th,.zahlungen td{text-align:left}.zahlungen td:last-child{text-align:right}.footer{margin-top:10px;font-size:9px;color:#777}</style></head><body><h1>Arbeitszeit & Fahrten – ${htmlSicher(x.titel)}</h1><div class="meta">Erstellt am ${htmlSicher(new Date().toLocaleDateString("de-DE"))}</div><div class="summary"><div><span>Gesamtbetrag</span><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.gesamt)):"–"}</strong></div><div><span>Bezahlt</span><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.bezahlt)):"–"}</strong></div><div><span>Offen</span><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.offen)):"–"}</strong></div><div><span>Stunden gesamt</span><strong>${htmlSicher(format(x.stunden))} h</strong></div><div><span>Kilometer gesamt</span><strong>${htmlSicher(format(x.km))} km</strong></div></div><table><thead><tr><th>Datum</th><th>Tag</th><th>Dienste</th><th>Stunden</th><th>Stundenlohn</th><th>Fahrziel</th><th>km</th><th>km-Satz</th><th>Bezahlt</th><th>Sonderleistungen</th><th>Pauschalen</th><th>Gesamt €</th><th>Bezahlt €</th><th>Offen €</th></tr></thead><tbody>${body}</tbody><tfoot><tr class="sum-row"><td colspan="11" style="text-align:right"><strong>Summe</strong></td><td class="num"><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.gesamt)):"–"}</strong></td><td class="num"><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.bezahlt)):"–"}</strong></td><td class="num"><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.offen)):"–"}</strong></td></tr></tfoot></table>${pdfZahlungen(x.daten)}<div class="footer">Arbeitszeit & Fahrten</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));<\/script></body></html>`);fenster.document.close();
   }catch(e){zeige("PDF-Export: "+e.message,"error")}
 }
 
