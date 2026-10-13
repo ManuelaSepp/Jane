@@ -561,19 +561,16 @@ function renderStundenlohn(){
   });
 }
 async function stundenlohnSpeichern(){
-  const ab=$("lohnMonat").value,roh=String($("stundenlohn").value||"").trim().replace(",","."),
-        lohn=Number(roh);
-  if(!/^\d{4}-\d{2}$/.test(ab))return zeige("Bitte den Monat für den Stundenlohn auswählen.","error");
-  if(!(lohn>0))return zeige("Bitte einen gültigen Stundenlohn eintragen.","error");
-  const vorhanden=state.stundenloehne.find(x=>x.ab===ab);
-  if(vorhanden)vorhanden.lohn=lohn;else state.stundenloehne.push({ab,lohn});
-  state.stundenloehne.sort((a,b)=>a.ab.localeCompare(b.ab));
+ const ab=$("lohnMonat").value,lohn=Number(String($("stundenlohn").value||"").replace(",","."));
+ if(!/^\d{4}-\d{2}$/.test(ab)||!(lohn>0))return zeige("Bitte gültigen Monat und Stundenlohn eintragen.","error");
+ try{
   await schreiben("saveStundenlohn",{ab,lohn});
-  $("stundenlohn").value="";
-  renderStundenlohn();renderStatistik();
-  zeige("Stundenlohn ab "+ab.slice(5,7)+"/"+ab.slice(0,4)+" gespeichert ✅","success");
+  const x=state.stundenloehne.find(v=>v.ab===ab);if(x)x.lohn=lohn;else state.stundenloehne.push({ab,lohn});
+  state.stundenloehne.sort((a,b)=>a.ab.localeCompare(b.ab));
+  $("stundenlohn").value="";renderStundenlohn();renderStatistik();
+  zeige("Stundenlohn gespeichert. Offene Beträge neu berechnet.","success");
+ }catch(e){zeige("Stundenlohn nicht gespeichert: "+e.message,"error");}
 }
-
 function zahlungBearbeitenStart(){
   state.zahlungsModus=true;
   state.zahlAuswahl.clear();
@@ -596,18 +593,15 @@ function renderZahlungsAuswahl(){
   $("zahlungBezahlt").disabled=n===0;
   $("zahlungOffen").disabled=n===0;
 }
-async function zahlungsstatusSetzen(bezahlt){if(!bezahlt)return zeige("Bezahlte Stunden bleiben festgeschrieben.","error");
-  const daten=[...state.zahlAuswahl];
-  if(!daten.length)return;
-  state.jahresEintraege.forEach(e=>{if(daten.includes(e.datum)&&!e.abwesenheit)e.bezahlt=bezahlt});
-  state.eintraege.forEach(e=>{if(daten.includes(e.datum)&&!e.abwesenheit)e.bezahlt=bezahlt});
-  await schreiben("setBezahlt",{daten,bezahlt});
-  const anzahl=daten.length;
-  zahlungBearbeitenEnde();
-  renderAlles();
-  zeige(anzahl+(anzahl===1?" Tag ":" Tage ")+(bezahlt?"als bezahlt markiert ✅":"wieder als offen markiert ✅"),"success");
+async function zahlungsstatusSetzen(bezahlt){
+ if(!bezahlt)return zeige("Bezahlte Stunden bleiben festgeschrieben.","error");
+ const daten=[...state.zahlAuswahl];if(!daten.length)return;
+ try{
+  await schreiben("setBezahlt",{daten,bezahlt:true});
+  zahlungBearbeitenEnde();await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  zeige(daten.length+" Arbeitstage als bezahlt bestätigt.","success");
+ }catch(e){zeige("Zahlungsstatus nicht bestätigt: "+e.message,"error");}
 }
-
 function tooltipFuerEintrag(e){
   const z=[ausIso(e.datum).toLocaleDateString("de-DE",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})];
   if(e.abwesenheit)z.push(e.abwesenheit);
