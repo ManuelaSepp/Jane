@@ -631,20 +631,60 @@ function zahlungBearbeitenEnde(){
   renderKalender();
   zeige("","");
 }
+function zahlungsPositionen(){
+ const result=[];
+ for(const datum of [...state.zahlAuswahl].sort()){
+  const e=state.jahresEintraege.find(x=>x.datum===datum);
+  if(!e||e.abwesenheit)continue;
+  const add=(art,id,label,bezahlt)=>{if(!bezahlt)result.push({datum,art,id:id||"",label:datum.slice(8,10)+"."+datum.slice(5,7)+". – "+label});};
+  if(Number(e.stunden||0)>0)add("stunden","","Arbeitsstunden ("+format(e.stunden)+" h)",e.bezahlt);
+  if(e.kmModus==="pauschal")add("km","","Fahrtkosten-Pauschale ("+euro(e.kmPauschal)+")",e.kmBezahlt);
+  else if(e.kmBezahlt){/* Tagesfahrtkosten bereits festgeschrieben */}
+  else if(Array.isArray(e.fahrten)&&e.fahrten.length){
+    e.fahrten.forEach(f=>add("fahrt",f.id,"Fahrt: "+(f.fahrziel||"ohne Ziel")+" ("+format(f.kilometer)+" km)",f.bezahlt));
+  }else if(Number(e.kilometer||0)>0)add("km","","Fahrtkosten ("+format(e.kilometer)+" km)",e.kmBezahlt);
+  (e.sonderleistungen||[]).forEach(x=>add("sonder",x.id,"Sonderleistung: "+x.name+" ("+euro(sonderBetragAktuell(x,datum))+")",x.bezahlt));
+ }
+ return result;
+}
 function renderZahlungsAuswahl(){
-  const n=state.zahlAuswahl.size;
-  $("zahlungAuswahlText").textContent=n===1?"1 Arbeitstag ausgewählt":n+" Arbeitstage ausgewählt";
-  $("zahlungBezahlt").disabled=n===0;
-  $("zahlungOffen").disabled=n===0;
+ const n=state.zahlAuswahl.size;
+ $("zahlungAuswahlText").textContent=n===1?"1 Arbeitstag ausgewählt":n+" Arbeitstage ausgewählt";
+ const g=$("zahlungLeistungen");g.replaceChildren();
+ const positionen=zahlungsPositionen();
+ if(!n)g.textContent="Wähle zuerst einen oder mehrere Tage im Kalender.";
+ else if(!positionen.length)g.textContent="Keine offenen Leistungen an diesen Tagen.";
+ else{
+  const alle=document.createElement("label");alle.style.cssText="display:flex;gap:8px;align-items:center;margin-bottom:9px;font-weight:bold";
+  const check=document.createElement("input");check.type="checkbox";check.checked=true;check.id="zahlungAllePositionen";
+  alle.append(check,document.createTextNode("Alle offenen Leistungen auswählen"));g.appendChild(alle);
+  positionen.forEach((p,i)=>{
+   const label=document.createElement("label");label.style.cssText="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #e5e7eb;font-weight:normal";
+   const c=document.createElement("input");c.type="checkbox";c.checked=true;c.className="zahlung-position";c.dataset.index=String(i);
+   label.append(c,document.createTextNode(p.label));g.appendChild(label);
+   c.onchange=()=>{const list=[...g.querySelectorAll(".zahlung-position")];check.checked=list.every(x=>x.checked);$("zahlungBezahlt").disabled=!list.some(x=>x.checked)};
+  });
+  check.onchange=()=>{g.querySelectorAll(".zahlung-position").forEach(x=>x.checked=check.checked);$("zahlungBezahlt").disabled=!check.checked};
+ }
+ $("zahlungBezahlt").disabled=!positionen.length;
+ $("zahlungOffen").disabled=true;
 }
 async function zahlungsstatusSetzen(bezahlt){
- if(!bezahlt)return zeige("Bezahlte Stunden bleiben festgeschrieben.","error");
- const daten=[...state.zahlAuswahl];if(!daten.length)return;
+ if(!bezahlt)return zeige("Bezahlte Leistungen bleiben festgeschrieben.","error");
+ const positionen=zahlungsPositionen();
+ const selected=[...$("zahlungLeistungen").querySelectorAll(".zahlung-position:checked")].map(c=>positionen[Number(c.dataset.index)]).filter(Boolean);
+ if(!selected.length)return zeige("Bitte mindestens eine offene Leistung auswählen.","error");
+ $("zahlungBezahlt").disabled=true;
+ let erfolg=0;
  try{
-  await schreiben("setBezahlt",{daten,bezahlt:true});
+  for(const p of selected){await schreiben("setLeistungBezahlt",{datum:p.datum,art:p.art,id:p.id,bezahlt:true});erfolg++;}
   zahlungBearbeitenEnde();await ladeJahr(state.kalenderDatum.getFullYear(),true);
-  zeige(daten.length+" Arbeitstage als bezahlt bestätigt.","success");
- }catch(e){zeige("Zahlungsstatus nicht bestätigt: "+e.message,"error");}
+  zeige(erfolg+" Leistungen als bezahlt bestätigt.","success");
+ }catch(e){
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  renderZahlungsAuswahl();
+  zeige(erfolg+" von "+selected.length+" Leistungen gespeichert. Fehler: "+e.message,"error");
+ }
 }
 function tooltipFuerEintrag(e){
   const z=[ausIso(e.datum).toLocaleDateString("de-DE",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})];
