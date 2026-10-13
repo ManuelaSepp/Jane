@@ -237,13 +237,19 @@ function renderAktuelleFahrten(){
 function sonderleistungenLesen(){return [...document.querySelectorAll(".sonder-zeile")].map(r=>({id:r.dataset.id,name:r.querySelector(".sonder-name").value.trim(),betrag:r.querySelector(".sonder-betrag").value.trim()===""?NaN:Number(r.querySelector(".sonder-betrag").value.replace(",","."))}));}
 function sonderVorlagenLesen(){try{const v=JSON.parse(localStorage.getItem("jane_sonder_vorlagen_v1")||"[]");return Array.isArray(v)?v.filter(x=>x&&typeof x.name==="string"&&Number.isFinite(Number(x.betrag))):[];}catch(_){return[]}}
 function sonderVorlageBetragAm(v,datum){const hist=Array.isArray(v.historie)?v.historie:[];let wert=Number(v.betrag);for(const h of [...hist].sort((a,b)=>a.ab.localeCompare(b.ab))){if(h.ab<=datum)wert=Number(h.betrag);else break;}return wert;}
+function sonderBetragAktuell(x,datum){
+ const gespeichert=Number(x.betrag||0);
+ if(x.bezahlt)return x.fixbetrag!=null?Number(x.fixbetrag):gespeichert;
+ const v=sonderVorlagenLesen().find(v=>v.name.toLocaleLowerCase("de")===String(x.name||"").toLocaleLowerCase("de"));
+ return v?sonderVorlageBetragAm(v,datum):gespeichert;
+}
 function sonderVorlagenSpeichern(){
  const name=$("sonderVorlageName").value.trim(),betrag=Number($("sonderVorlageBetrag").value.replace(",",".")),ab=$("sonderVorlageDatum").value;
  if(!name||!Number.isFinite(betrag)||betrag<0||!/^\d{4}-\d{2}-\d{2}$/.test(ab))return zeige("Bitte Bezeichnung, Betrag und Gültigkeitsdatum eingeben.","error");
  const v=sonderVorlagenLesen(),idx=v.findIndex(x=>x.name.toLocaleLowerCase("de")===name.toLocaleLowerCase("de"));
  if(idx>=0){const alt=v[idx];const historie=Array.isArray(alt.historie)?alt.historie.slice():[];const hi=historie.findIndex(x=>x.ab===ab);if(hi>=0)historie[hi]={ab,betrag};else historie.push({ab,betrag});v[idx]={...alt,name,betrag:alt.betrag,historie};}
  else v.push({name,betrag,historie:[{ab,betrag}]});
- localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(v));$("sonderVorlageName").value="";$("sonderVorlageBetrag").value="";$("sonderVorlageSpeichern").textContent="Vorlage speichern";renderSonderVorlagen();renderStatistik();zeige("Vorlage auf diesem Gerät gespeichert.","success");
+ localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(v));$("sonderVorlageName").value="";$("sonderVorlageBetrag").value="";$("sonderVorlageSpeichern").textContent="Vorlage speichern";renderSonderVorlagen();renderStatistik();zeige("Vorlage gespeichert. Offene Beträge werden nach Datum neu berechnet.","success");
 }
 function renderSonderVorlagen(){
  const box=$("sonderVorlagenListe");box.replaceChildren();
@@ -269,7 +275,7 @@ function sonderleistungHinzufuegen(x={}){
  const del=document.createElement("button");del.type="button";del.textContent="×";del.onclick=()=>r.remove();del.disabled=!!x.bezahlt;r.append(auswahl,n,b,del);if(state.originalDatum&&x.id){const pay=document.createElement("button");pay.type="button";pay.textContent=x.bezahlt?"✓ Bezahlt":"Als bezahlt";pay.disabled=!!x.bezahlt;pay.onclick=()=>leistungBezahlt("sonder",x.id);r.append(pay);}$("sonderListe").appendChild(r);
 }
 function sonderleistungenSetzen(items){$("sonderListe").replaceChildren();(Array.isArray(items)?items:[]).forEach(sonderleistungHinzufuegen);}
-function sonderSumme(e){return (Array.isArray(e.sonderleistungen)?e.sonderleistungen:[]).reduce((s,x)=>s+Number(x.betrag||0),0);}
+function sonderSumme(e){return (Array.isArray(e.sonderleistungen)?e.sonderleistungen:[]).reduce((s,x)=>s+sonderBetragAktuell(x,e.datum),0);}
 function daten(){
   const fahrten=state.aktuelleFahrten.map(f=>({
     id:f.id||"",
@@ -443,7 +449,7 @@ function eintragLaden(e){
   datum.value=e.datum;
   beginn.value=normalisiereZeit(e.beginn);
   ende.value=normalisiereZeit(e.ende);beginn2.value=normalisiereZeit(e.beginn2);ende2.value=normalisiereZeit(e.ende2);
-  abwesenheit.value=e.abwesenheit||"";sonderleistungenSetzen(e.sonderleistungen);$("kmModus").value=e.kmModus||"km";$("kmPauschal").value=e.kmPauschal||"";
+  abwesenheit.value=e.abwesenheit||"";sonderleistungenSetzen((e.sonderleistungen||[]).map(x=>({...x,betrag:sonderBetragAktuell(x,e.datum)})));$("kmModus").value=e.kmModus||"km";$("kmPauschal").value=e.kmPauschal||"";
   notiz.value=e.notiz||"";
   state.aktuelleFahrten=Array.isArray(e.fahrten)?e.fahrten.map(f=>({
     id:String(f.id||""),
@@ -578,7 +584,7 @@ function geldWerte(eintraege){
   const wert=e.kmBezahlt&&e.kmFix!=null?Number(e.kmFix):(e.kmModus==="pauschal"?Number(e.kmPauschal||0):(rate==null?(Number(e.kilometer||0)>0?null:0):Number(e.kilometer||0)*rate));
   if(wert===null)unbekannt=true;else{km+=wert;if(e.kmBezahlt)bezahlt+=wert;else offen+=wert;}
   }
-  for(const x of e.sonderleistungen||[]){const b=x.bezahlt&&x.fixbetrag!=null?Number(x.fixbetrag):Number(x.betrag||0);sonder+=b;if(x.bezahlt)bezahlt+=b;else offen+=b;}
+  for(const x of e.sonderleistungen||[]){const b=sonderBetragAktuell(x,e.datum);sonder+=b;if(x.bezahlt)bezahlt+=b;else offen+=b;}
  }
  return{bekannt:!unbekannt,gesamt:stunden+km+sonder,bezahlt,offen,stunden,km,sonder};
 }
@@ -656,7 +662,7 @@ function tooltipFuerEintrag(e){
   }else if(e.fahrziel){
     z.push("Fahrt: "+e.fahrziel+" · "+format(e.kilometer)+" km");
   }
-  if(sonderSumme(e))z.push("Sonderleistungen: "+e.sonderleistungen.map(x=>x.name+" ("+euro(x.betrag)+")").join(", "));if(e.notiz)z.push("Notiz: "+e.notiz);
+  if(sonderSumme(e))z.push("Sonderleistungen: "+e.sonderleistungen.map(x=>x.name+" ("+euro(sonderBetragAktuell(x,e.datum))+")").join(", "));if(e.notiz)z.push("Notiz: "+e.notiz);
   return z.join("\n");
 }
 function tooltipZeigen(el,text){const t=$("calendarTooltip");t.textContent=text;t.classList.add("visible");const r=el.getBoundingClientRect();tooltipPositionieren(r.left+r.width/2,r.top)}
@@ -782,7 +788,7 @@ function exportKontext(){
   const stunden=daten.reduce((s,e)=>s+Number(e.stunden||0),0),km=daten.reduce((s,e)=>s+Number(e.kilometer||0),0),geld=geldWerte(daten);
   return{art,jahr:y,monat:m,titel:art==="monat"?state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"}):"Jahr "+y,stunden,km,geld,daten:[...daten].sort((a,b)=>a.datum.localeCompare(b.datum))};
 }
-function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",beginn2:e.beginn2||"",ende2:e.ende2||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0),bezahlt:!e.abwesenheit&&e.bezahlt===true,sonderleistungen:e.sonderleistungen||[],sonder:sonderSumme(e),geld:geldWerte([e])}}
+function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",beginn2:e.beginn2||"",ende2:e.ende2||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0),bezahlt:!e.abwesenheit&&e.bezahlt===true,sonderleistungen:(e.sonderleistungen||[]).map(x=>({...x,betrag:sonderBetragAktuell(x,e.datum)})),sonder:sonderSumme(e),geld:geldWerte([e])}}
 async function exportExcel(){
   try{
     if(typeof ExcelJS==="undefined")throw new Error("Excel-Modul konnte nicht geladen werden.");const x=exportKontext(),zeilen=x.daten.map(exportZeile),wb=new ExcelJS.Workbook(),ws=wb.addWorksheet("Arbeitszeit");
