@@ -236,8 +236,25 @@ function renderAktuelleFahrten(){
 }
 function sonderleistungenLesen(){return [...document.querySelectorAll(".sonder-zeile")].map(r=>({id:r.dataset.id,name:r.querySelector(".sonder-name").value.trim(),betrag:r.querySelector(".sonder-betrag").value.trim()===""?NaN:Number(r.querySelector(".sonder-betrag").value.replace(",","."))}));}
 function sonderVorlagenLesen(){try{const v=JSON.parse(localStorage.getItem("jane_sonder_vorlagen_v1")||"[]");return Array.isArray(v)?v.filter(x=>x&&typeof x.name==="string"&&Number.isFinite(Number(x.betrag))):[];}catch(_){return[]}}
-function sonderVorlagenSpeichern(){const name=$("sonderVorlageName").value.trim(),betrag=Number($("sonderVorlageBetrag").value.replace(",","."));if(!name||!Number.isFinite(betrag)||betrag<0)return zeige("Bitte Bezeichnung und gültigen Betrag eingeben.","error");const v=sonderVorlagenLesen();const idx=v.findIndex(x=>x.name.toLocaleLowerCase("de")===name.toLocaleLowerCase("de"));if(idx>=0)v[idx]={name,betrag};else v.push({name,betrag});localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(v));$("sonderVorlageName").value="";$("sonderVorlageBetrag").value="";renderSonderVorlagen();zeige("Vorlage auf diesem Gerät gespeichert.","success");}
-function renderSonderVorlagen(){const box=$("sonderVorlagenListe");box.replaceChildren();for(const v of sonderVorlagenLesen()){const row=document.createElement("div");row.className="entry-trip-item";const txt=document.createElement("span");txt.textContent=v.name+" · "+euro(v.betrag);const del=document.createElement("button");del.type="button";del.textContent="Entfernen";del.onclick=()=>{localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(sonderVorlagenLesen().filter(x=>x.name!==v.name)));renderSonderVorlagen();};row.append(txt,del);box.append(row);}}
+function sonderVorlageBetragAm(v,datum){const hist=Array.isArray(v.historie)?v.historie:[];let wert=Number(v.betrag);for(const h of [...hist].sort((a,b)=>a.ab.localeCompare(b.ab))){if(h.ab<=datum)wert=Number(h.betrag);else break;}return wert;}
+function sonderVorlagenSpeichern(){
+ const name=$("sonderVorlageName").value.trim(),betrag=Number($("sonderVorlageBetrag").value.replace(",",".")),ab=$("sonderVorlageDatum").value;
+ if(!name||!Number.isFinite(betrag)||betrag<0||!/^\\d{4}-\\d{2}-\\d{2}$/.test(ab))return zeige("Bitte Bezeichnung, Betrag und Gültigkeitsdatum eingeben.","error");
+ const v=sonderVorlagenLesen(),idx=v.findIndex(x=>x.name.toLocaleLowerCase("de")===name.toLocaleLowerCase("de"));
+ if(idx>=0){const alt=v[idx];const historie=Array.isArray(alt.historie)?alt.historie.slice():[];const hi=historie.findIndex(x=>x.ab===ab);if(hi>=0)historie[hi]={ab,betrag};else historie.push({ab,betrag});v[idx]={...alt,name,betrag:alt.betrag,historie};}
+ else v.push({name,betrag,historie:[{ab,betrag}]});
+ localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(v));$("sonderVorlageName").value="";$("sonderVorlageBetrag").value="";$("sonderVorlageSpeichern").textContent="Vorlage speichern";renderSonderVorlagen();renderStatistik();zeige("Vorlage auf diesem Gerät gespeichert.","success");
+}
+function renderSonderVorlagen(){
+ const box=$("sonderVorlagenListe");box.replaceChildren();
+ for(const v of sonderVorlagenLesen()){
+  const row=document.createElement("div");row.className="entry-trip-item";
+  const txt=document.createElement("span");txt.textContent=v.name+" · "+euro(sonderVorlageBetragAm(v,iso(state.kalenderDatum)));
+  const edit=document.createElement("button");edit.type="button";edit.textContent="Bearbeiten";edit.onclick=()=>{$("sonderVorlageName").value=v.name;$("sonderVorlageDatum").value=iso(state.kalenderDatum);$("sonderVorlageBetrag").value=String(sonderVorlageBetragAm(v,iso(state.kalenderDatum))).replace(".",",");$("sonderVorlageSpeichern").textContent="Änderung speichern";$("sonderVorlageBetrag").focus();};
+  const del=document.createElement("button");del.type="button";del.textContent="Entfernen";del.onclick=()=>{localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(sonderVorlagenLesen().filter(x=>x.name!==v.name)));renderSonderVorlagen();};
+  row.append(txt,edit,del);box.append(row);
+ }
+}
 function sonderleistungHinzufuegen(x={}){
  const r=document.createElement("div");r.className="sonder-zeile";r.dataset.id=x.id||("sonder_"+Date.now()+"_"+Math.random().toString(36).slice(2));r.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0";
  const n=document.createElement("input");n.className="sonder-name";n.placeholder="Bezeichnung";n.maxLength=150;n.value=x.name||"";n.style.flex="2";n.disabled=!!x.bezahlt;
@@ -245,7 +262,7 @@ function sonderleistungHinzufuegen(x={}){
  const leer=document.createElement("option");leer.value="";leer.textContent="Vorlage auswählen …";auswahl.appendChild(leer);
  for(const v of sonderVorlagenLesen()){const o=document.createElement("option");o.value=v.name;o.textContent=v.name+" · "+euro(v.betrag);auswahl.appendChild(o);}
  const frei=document.createElement("option");frei.value="__frei";frei.textContent="Freie Eingabe";auswahl.appendChild(frei);
- auswahl.onchange=()=>{if(auswahl.value==="__frei"){n.value="";b.value="";n.focus();return;}const v=sonderVorlagenLesen().find(v=>v.name===auswahl.value);if(v){n.value=v.name;b.value=String(v.betrag).replace(".",",");}};
+ auswahl.onchange=()=>{if(auswahl.value==="__frei"){n.value="";b.value="";n.focus();return;}const v=sonderVorlagenLesen().find(v=>v.name===auswahl.value);if(v){n.value=v.name;b.value=String(sonderVorlageBetragAm(v,datum.value)).replace(".",",");}};
  n.addEventListener("change",()=>{const v=sonderVorlagenLesen().find(v=>v.name===n.value.trim());if(v)auswahl.value=v.name;});
  if(sonderVorlagenLesen().some(v=>v.name===n.value))auswahl.value=n.value;
  const b=document.createElement("input");b.className="sonder-betrag";b.placeholder="Pauschale €";b.inputMode="decimal";b.value=x.betrag===undefined?"":String(x.betrag).replace(".",",");b.style.flex="1";b.disabled=!!x.bezahlt;
