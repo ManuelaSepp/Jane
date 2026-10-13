@@ -541,7 +541,7 @@ function lohnFuerDatum(datumIso){
   }
   return lohn&&lohn>0?lohn:null;
 }
-function kilometerSatzFuerDatum(d){let s=null;for(const x of state.kilometersaetze){if(x.ab<=d.slice(0,7))s=Number(x.satz);else break;}return s;}
+function kilometerSatzFuerDatum(d){let s=null;for(const x of state.kilometersaetze){if((x.ab.length===7?x.ab+"-01":x.ab)<=d)s=Number(x.satz);else break;}return s;}
 function geldWerte(eintraege){
  let stunden=0,km=0,sonder=0,bezahlt=0,offen=0,unbekannt=false;
  for(const e of eintraege){
@@ -694,7 +694,7 @@ async function leistungBezahlt(art,id=""){
 }
 async function kilometersatzSpeichern(){
  const ab=$("kmSatzMonat").value,satz=Number($("kmSatzWert").value.replace(",","."));
- if(!/^\d{4}-\d{2}$/.test(ab)||!Number.isFinite(satz)||satz<0)return zeige("Ungültiger Kilometersatz.","error");
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(ab)||!Number.isFinite(satz)||satz<0)return zeige("Ungültiger Kilometersatz.","error");
  try{
   await schreiben("saveKilometersatz",{ab,satz});
   const x=state.kilometersaetze.find(v=>v.ab===ab);if(x)x.satz=satz;else state.kilometersaetze.push({ab,satz});
