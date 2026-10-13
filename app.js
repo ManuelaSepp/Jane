@@ -6,7 +6,7 @@ const state={
 };
 let jsonpSequenz=0,ladeSequenz=0;
 
-const form=$("entryForm"),datum=$("datum"),beginn=$("beginn"),ende=$("ende"),abwesenheit=$("abwesenheit"),fahrziel=$("fahrziel"),notiz=$("notiz"),meldung=$("meldung");
+const form=$("entryForm"),datum=$("datum"),beginn=$("beginn"),ende=$("ende"),beginn2=$("beginn2"),ende2=$("ende2"),abwesenheit=$("abwesenheit"),fahrziel=$("fahrziel"),notiz=$("notiz"),meldung=$("meldung");
 const save=$("saveButton"),update=$("updateButton"),del=$("deleteButton"),copyTime=$("copyTimeButton"),copyTimeTrips=$("copyTimeTripsButton"),cancel=$("cancelButton"),buttonRow=$("buttonRow");
 
 // DOM steht bereits vollständig über diesem Script. Sofort starten, nicht auf externe Bibliotheken warten.
@@ -17,9 +17,9 @@ del.onclick=loeschen;
 copyTime.onclick=()=>arbeitszeitKopieren(false);
 copyTimeTrips.onclick=()=>arbeitszeitKopieren(true);
 cancel.onclick=()=>resetForm();
-beginn.oninput=stundenBerechnen; ende.oninput=stundenBerechnen;
+beginn.oninput=stundenBerechnen; ende.oninput=stundenBerechnen; beginn2.oninput=stundenBerechnen; ende2.oninput=stundenBerechnen;
 beginn.addEventListener("blur",()=>zeitFormatieren(beginn));
-ende.addEventListener("blur",()=>zeitFormatieren(ende));
+ende.addEventListener("blur",()=>zeitFormatieren(ende)); beginn2.addEventListener("blur",()=>zeitFormatieren(beginn2)); ende2.addEventListener("blur",()=>zeitFormatieren(ende2));
 abwesenheit.onchange=handleAbwesenheit;
 fahrziel.onchange=renderFahrtInfo;
 $("fahrtHinzufuegen").onclick=fahrtHinzufuegen;
@@ -152,14 +152,14 @@ function stundenBerechnen(){
     $("stundenAnzeige").textContent="0";
     return 0;
   }
-  const h=berechneStundenAusZeiten(beginn.value,ende.value);
+  const h=berechneStundenAusZeiten(beginn.value,ende.value)+berechneStundenAusZeiten(beginn2.value,ende2.value);
   $("stundenAnzeige").textContent=format(h);
   return h;
 }
 
 function handleAbwesenheit(){
-  const x=!!abwesenheit.value;beginn.disabled=x;ende.disabled=x;
-  if(x){beginn.value="";ende.value=""} stundenBerechnen();
+  const x=!!abwesenheit.value;beginn.disabled=x;ende.disabled=x;beginn2.disabled=x;ende2.disabled=x;
+  if(x){beginn.value="";ende.value="";beginn2.value="";ende2.value=""} stundenBerechnen();
 }
 
 function gewaehltesZiel(){return state.fahrziele.find(z=>z.id===fahrziel.value)||null}
@@ -244,7 +244,7 @@ function daten(){
   const kilometer=fahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   const fahrzielText=fahrten.map(f=>f.fahrziel).filter(Boolean).join(" · ");
   return{
-    datum:datum.value,beginn:beginn.value,ende:ende.value,stunden:stundenBerechnen(),abwesenheit:abwesenheit.value,notiz:notiz.value,
+    datum:datum.value,beginn:beginn.value,ende:ende.value,beginn2:beginn2.value,ende2:ende2.value,stunden:stundenBerechnen(),abwesenheit:abwesenheit.value,notiz:notiz.value,
     fahrten,
     fahrzielId:fahrten.length===1?fahrten[0].fahrzielId:"",
     fahrziel:fahrzielText,
@@ -255,6 +255,8 @@ function validiere(d){
   if(!d.datum)return"Bitte Datum auswählen.";
   if(d.abwesenheit)return"";
   if(!d.beginn||!d.ende)return"Bitte Beginn und Ende eintragen.";
+  if(!!d.beginn2!==!!d.ende2)return"Zweiter Dienst: Bitte Beginn und Ende vollständig eintragen.";
+  if(d.beginn2&&d.ende2){const a=minuten(d.beginn),b=minuten(d.ende),c=minuten(d.beginn2),f=minuten(d.ende2);if(a===null||b===null||c===null||f===null||a===b||c===f||b<=a||f<=c||c<b)return"Die beiden Dienste müssen vollständig und ohne Überschneidung nacheinander liegen.";}
   if(!(d.stunden>0))return"Die Arbeitszeit muss größer als 0 sein.";
   return"";
 }
@@ -278,6 +280,7 @@ async function ladeJahr(jahr,leise=false){
       ...e,
       beginn:normalisiereZeit(e.beginn),
       ende:normalisiereZeit(e.ende),
+      beginn2:normalisiereZeit(e.beginn2),ende2:normalisiereZeit(e.ende2),
       stunden:Number(e.stunden||0),
       kilometer:Number(e.kilometer||0),
       fahrten:Array.isArray(e.fahrten)?e.fahrten.map(f=>({
@@ -336,7 +339,7 @@ async function speichern(e){
   e.preventDefault();
   if(!abwesenheit.value){
     beginn.value=normalisiereZeit(beginn.value);
-    ende.value=normalisiereZeit(ende.value);
+    ende.value=normalisiereZeit(ende.value);beginn2.value=normalisiereZeit(beginn2.value);ende2.value=normalisiereZeit(ende2.value);
   }
   const d=daten(),f=validiere(d);
   if(f)return zeige(f,"error");
@@ -371,6 +374,7 @@ async function aktion(action,payload){
         datum:payload.datum,
         beginn:payload.abwesenheit?"":normalisiereZeit(payload.beginn),
         ende:payload.abwesenheit?"":normalisiereZeit(payload.ende),
+        beginn2:payload.abwesenheit?"":normalisiereZeit(payload.beginn2),ende2:payload.abwesenheit?"":normalisiereZeit(payload.ende2),
         stunden:payload.abwesenheit?0:Number(payload.stunden||0),
         abwesenheit:payload.abwesenheit||"",
         notiz:payload.notiz||"",
@@ -402,7 +406,7 @@ function eintragLaden(e){
   state.originalDatum=e.datum;
   datum.value=e.datum;
   beginn.value=normalisiereZeit(e.beginn);
-  ende.value=normalisiereZeit(e.ende);
+  ende.value=normalisiereZeit(e.ende);beginn2.value=normalisiereZeit(e.beginn2);ende2.value=normalisiereZeit(e.ende2);
   abwesenheit.value=e.abwesenheit||"";
   notiz.value=e.notiz||"";
   state.aktuelleFahrten=Array.isArray(e.fahrten)?e.fahrten.map(f=>({
@@ -441,7 +445,7 @@ function arbeitszeitKopieren(mitFahrten=false){
   state.ausgewaehlt=null;
   datum.value="";
   beginn.value=start;
-  ende.value=schluss;
+  ende.value=schluss;beginn2.value=normalisiereZeit(beginn2.value);ende2.value=normalisiereZeit(ende2.value);
   abwesenheit.value="";
   notiz.value="";
   fahrziel.value="";
@@ -460,7 +464,7 @@ function arbeitszeitKopieren(mitFahrten=false){
   datum.focus();
 }
 function resetForm(heute=true){
-  state.originalDatum=null;editMode(false);beginn.value="";ende.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];
+  state.originalDatum=null;editMode(false);beginn.value="";ende.value="";beginn2.value="";ende2.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];
   if(heute){datum.value=iso(new Date());state.ausgewaehlt=datum.value}
   handleAbwesenheit();renderFahrtInfo();renderAktuelleFahrten();stundenBerechnen();
 }
@@ -597,6 +601,7 @@ function tooltipFuerEintrag(e){
   if(e.abwesenheit)z.push(e.abwesenheit);
   else{
     if(e.beginn||e.ende)z.push("Zeit: "+(e.beginn||"–")+" bis "+(e.ende||"–")+" Uhr");
+    if(e.beginn2||e.ende2)z.push("Zweiter Dienst: "+(e.beginn2||"–")+" bis "+(e.ende2||"–")+" Uhr");
     z.push("Stunden: "+format(e.stunden)+" h")
   }
   const fahrten=Array.isArray(e.fahrten)?e.fahrten:[];
@@ -706,7 +711,7 @@ function exportKontext(){
   const stunden=daten.reduce((s,e)=>s+Number(e.stunden||0),0),km=daten.reduce((s,e)=>s+Number(e.kilometer||0),0);
   return{art,jahr:y,monat:m,titel:art==="monat"?state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"}):"Jahr "+y,stunden,km,daten:[...daten].sort((a,b)=>a.datum.localeCompare(b.datum))};
 }
-function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0),bezahlt:!e.abwesenheit&&e.bezahlt===true}}
+function exportZeile(e){const d=ausIso(e.datum);return{datum:d,datumText:d.toLocaleDateString("de-DE"),wochentag:d.toLocaleDateString("de-DE",{weekday:"short"}),beginn:e.beginn||"",ende:e.ende||"",beginn2:e.beginn2||"",ende2:e.ende2||"",stunden:Number(e.stunden||0),art:e.abwesenheit||"Arbeit",fahrziel:e.fahrziel||"",kilometer:Number(e.kilometer||0),bezahlt:!e.abwesenheit&&e.bezahlt===true}}
 async function exportExcel(){
   try{
     if(typeof ExcelJS==="undefined")throw new Error("Excel-Modul konnte nicht geladen werden.");const x=exportKontext(),zeilen=x.daten.map(exportZeile),wb=new ExcelJS.Workbook(),ws=wb.addWorksheet("Arbeitszeit");
@@ -716,7 +721,7 @@ async function exportExcel(){
     ["A3","D3","E3","H3"].forEach(c=>ws.getCell(c).font={bold:true});
     const headerRow=5,headers=["Datum","Tag","Beginn","Ende","Stunden","Art","Fahrziel","km","Bezahlt"];
     headers.forEach((h,i)=>{const c=ws.getCell(headerRow,i+1);c.value=h;c.font={bold:true,color:{argb:"FFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"70AD47"}};c.alignment={horizontal:"center",vertical:"middle"}});
-    zeilen.forEach((z,i)=>{const row=headerRow+1+i,serial=Date.UTC(z.datum.getFullYear(),z.datum.getMonth(),z.datum.getDate())/86400000+25569;ws.getCell(row,1).value=serial;ws.getCell(row,1).numFmt="dd.mm.yyyy";ws.getCell(row,2).value=z.wochentag;ws.getCell(row,3).value=z.beginn;ws.getCell(row,4).value=z.ende;ws.getCell(row,5).value=z.stunden;ws.getCell(row,5).numFmt='0.00';ws.getCell(row,6).value=z.art;ws.getCell(row,7).value=z.fahrziel;ws.getCell(row,8).value=z.kilometer;ws.getCell(row,8).numFmt='0.0';ws.getCell(row,9).value=z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):"";for(let c=1;c<=9;c++)ws.getCell(row,c).alignment={horizontal:"center",vertical:"middle"}});
+    zeilen.forEach((z,i)=>{const row=headerRow+1+i,serial=Date.UTC(z.datum.getFullYear(),z.datum.getMonth(),z.datum.getDate())/86400000+25569;ws.getCell(row,1).value=serial;ws.getCell(row,1).numFmt="dd.mm.yyyy";ws.getCell(row,2).value=z.wochentag;ws.getCell(row,3).value=z.beginn+(z.beginn2?" / "+z.beginn2:"");ws.getCell(row,4).value=z.ende+(z.ende2?" / "+z.ende2:"");ws.getCell(row,5).value=z.stunden;ws.getCell(row,5).numFmt='0.00';ws.getCell(row,6).value=z.art;ws.getCell(row,7).value=z.fahrziel;ws.getCell(row,8).value=z.kilometer;ws.getCell(row,8).numFmt='0.0';ws.getCell(row,9).value=z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):"";for(let c=1;c<=9;c++)ws.getCell(row,c).alignment={horizontal:"center",vertical:"middle"}});
     const widths=[12,10,9,9,10,12,Math.max(14,...zeilen.map(z=>z.fahrziel.length+2)),10,10];ws.columns=widths.map(width=>({width}));ws.views=[{state:"frozen",ySplit:headerRow}];ws.autoFilter={from:{row:headerRow,column:1},to:{row:headerRow,column:9}};
     const buffer=await wb.xlsx.writeBuffer(),blob=new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=x.art==="monat"?`Arbeitszeit_Fahrten_${x.jahr}-${String(x.monat).padStart(2,"0")}.xlsx`:`Arbeitszeit_Fahrten_${x.jahr}.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch(e){zeige("Excel-Export: "+e.message,"error")}
@@ -724,7 +729,7 @@ async function exportExcel(){
 function exportPdf(){
   try{
     const x=exportKontext(),zeilen=x.daten.map(exportZeile),fenster=window.open("","_blank");if(!fenster)throw new Error("PDF-Fenster konnte nicht geöffnet werden.");
-    const body=zeilen.map(z=>`<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td>${htmlSicher(z.beginn)}</td><td>${htmlSicher(z.ende)}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td>${htmlSicher(z.art)}</td><td>${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td></tr>`).join("");
+    const body=zeilen.map(z=>`<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td>${htmlSicher(z.beginn+(z.beginn2?" / "+z.beginn2:""))}</td><td>${htmlSicher(z.ende+(z.ende2?" / "+z.ende2:""))}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td>${htmlSicher(z.art)}</td><td>${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td></tr>`).join("");
     fenster.document.open();fenster.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Arbeitszeit & Fahrten</title><style>@page{size:A4 landscape;margin:11mm}body{font-family:Arial,sans-serif;color:#222;margin:0}h1{font-size:20px;margin:0 0 4px}.meta{font-size:11px;color:#666;margin-bottom:12px}.summary{display:flex;gap:10px;margin:0 0 14px}.summary div{border:1px solid #ccd3d9;border-radius:8px;padding:7px 10px;min-width:160px}.summary span{display:block;font-size:10px;color:#666}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:9.5px;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}th,td{border-bottom:1px solid #d6d6d6;padding:5px;vertical-align:top;text-align:center}th{background:#eef3f7}th:nth-child(7),td:nth-child(7){width:22%}.num{white-space:nowrap}.footer{margin-top:10px;font-size:9px;color:#777}</style></head><body><h1>Arbeitszeit & Fahrten – ${htmlSicher(x.titel)}</h1><div class="meta">Erstellt am ${htmlSicher(new Date().toLocaleDateString("de-DE"))}</div><div class="summary"><div><span>Stunden gesamt</span><strong>${htmlSicher(format(x.stunden))} h</strong></div><div><span>Kilometer gesamt</span><strong>${htmlSicher(format(x.km))} km</strong></div></div><table><thead><tr><th>Datum</th><th>Tag</th><th>Beginn</th><th>Ende</th><th>Stunden</th><th>Art</th><th>Fahrziel</th><th>km</th><th>Bezahlt</th></tr></thead><tbody>${body}</tbody></table><div class="footer">Arbeitszeit & Fahrten</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));<\/script></body></html>`);fenster.document.close();
   }catch(e){zeige("PDF-Export: "+e.message,"error")}
 }
