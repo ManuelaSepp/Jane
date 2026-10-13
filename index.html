@@ -96,6 +96,17 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </div>
 </div></details>
 
+<details class="card" id="zahlungenKarte"><summary>Zahlungen zuordnen (mit Zahlungsdatum)</summary><div class="content">
+<p class="export-hint">Zahlungseingang erfassen, offene Leistungen zuordnen und erst nach Prüfung verbindlich speichern. Auch Teilzahlungen sind möglich.</p>
+<label for="zahlungDatumNeu">Zahlungsdatum</label><input id="zahlungDatumNeu" type="date">
+<label for="zahlungBetragNeu">Erhaltener Betrag (€)</label><input id="zahlungBetragNeu" type="text" inputmode="decimal" placeholder="z. B. 180,00">
+<button id="zahlungSuchenNeu" type="button">Passende offene Leistungen suchen</button>
+<div id="zahlungStatusNeu" role="status" style="margin:10px 0"></div>
+<div id="zahlungTrefferNeu"></div>
+<div id="zahlungRestNeu" style="margin:12px 0;font-weight:700"></div>
+<button id="zahlungBuchenNeu" type="button" class="primary" disabled>Zahlung verbindlich speichern</button>
+<h3>Zahlungshistorie</h3><div id="zahlungHistorieNeu"></div>
+</div></details>
 <details class="card"><summary>Jahresübersicht</summary><div class="content">
 <div class="overview">
 <div class="stat"><strong id="jahrStunden">0 h</strong><span>Stunden im Jahr</span></div>
@@ -145,7 +156,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=3.0"></script>
-<script src="app.js?v=3.1"></script>
+<script src="app.js?v=4.0-test"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
 <script>document.querySelectorAll("details").forEach(el=>el.open=false);</script></body>
