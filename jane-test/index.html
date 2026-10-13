@@ -106,9 +106,9 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </div></details>
 
 <details class="card"><summary>Stundenlohn</summary><div class="content">
-<p class="export-hint">Der Stundenlohn bleibt leer, bis du selbst einen einträgst. Änderungen gelten jeweils ab dem gewählten Monat; ältere Monate behalten ihren bisherigen Satz.</p>
-<label for="lohnMonat">Gültig ab Monat</label>
-<input id="lohnMonat" type="month">
+<p class="export-hint">Der Stundenlohn bleibt leer, bis du selbst einen einträgst. Änderungen gelten ab dem gewählten Kalendertag. Bereits bezahlte Beträge bleiben unverändert.</p>
+<label for="lohnMonat">Gültig ab Datum</label>
+<input id="lohnMonat" type="date">
 <label for="stundenlohn">Stundenlohn</label>
 <input id="stundenlohn" type="text" inputmode="decimal" placeholder="z. B. 18,50">
 <button id="lohnSpeichern" type="button" class="primary" style="margin-top:10px;border:0;color:#fff;font-weight:700">Stundenlohn speichern</button>
@@ -144,8 +144,8 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </div></details>
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
-<script src="config.js?v=2.2-test"></script>
-<script src="app.js?v=2.3-test"></script>
+<script src="config.js?v=2.5-test"></script>
+<script src="app.js?v=2.5-test"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
 <script>document.querySelectorAll("details").forEach(el=>el.open=false);</script></body>
