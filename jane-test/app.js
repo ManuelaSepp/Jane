@@ -382,7 +382,7 @@ async function aktion(action,payload){
   const textVorher=btn.textContent;
   try{
     btn.disabled=true;
-    btn.textContent=action==="delete"?"Lösche …":"Speichere …";
+    btn.textContent=action==="delete"?"Löschen …":"Speichern …";
     zeige(action==="delete"?"Lösche Eintrag ...":"Speichere Eintrag ...","");
     await schreiben(action,payload);
 
