@@ -54,7 +54,7 @@ function speichereLokalenCache(jahr){
       eintraegeJahr:state.jahresEintraege,
       fahrziele:state.fahrziele,
       startAdresse:state.startAdresse,
-      stundenloehne:state.stundenloehne
+      stundenloehne:state.stundenloehne,kilometersaetze:state.kilometersaetze
     }));
   }catch(_){}
 }
@@ -227,14 +227,14 @@ function renderAktuelleFahrten(){
     const d=document.createElement("div");d.className="entry-trip-item";
     const info=document.createElement("div");
     info.innerHTML=`<strong>${htmlSicher(f.fahrziel)}</strong><small>Hin & Rück: ${format(f.kilometer)} km</small>`;
-    const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.onclick=()=>fahrtEntfernen(i);
+    const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.disabled=!!state.jahresEintraege.find(x=>x.datum===state.originalDatum)?.kmBezahlt;b.onclick=()=>fahrtEntfernen(i);
     d.append(info,b);g.appendChild(d);
   });
   const km=state.aktuelleFahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   $("fahrtGesamtKm").textContent=format(km)+" km";
   gesamt.classList.remove("hidden");
 }
-function sonderleistungenLesen(){return [...document.querySelectorAll(".sonder-zeile")].map(r=>({id:r.dataset.id,name:r.querySelector(".sonder-name").value.trim(),betrag:Number(r.querySelector(".sonder-betrag").value.replace(",","."))}));}
+function sonderleistungenLesen(){return [...document.querySelectorAll(".sonder-zeile")].map(r=>({id:r.dataset.id,name:r.querySelector(".sonder-name").value.trim(),betrag:r.querySelector(".sonder-betrag").value.trim()===""?NaN:Number(r.querySelector(".sonder-betrag").value.replace(",","."))}));}
 function sonderleistungHinzufuegen(x={}){
  const r=document.createElement("div");r.className="sonder-zeile";r.dataset.id=x.id||("sonder_"+Date.now()+"_"+Math.random().toString(36).slice(2));r.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0";
  const n=document.createElement("input");n.className="sonder-name";n.placeholder="Bezeichnung";n.maxLength=150;n.value=x.name||"";n.style.flex="2";n.disabled=!!x.bezahlt;
@@ -261,7 +261,7 @@ function daten(){
   };
 }
 function validiere(d){
-  if(!d.datum)return"Bitte Datum auswählen.";if(d.sonderleistungen.some(x=>!x.name||!Number.isFinite(x.betrag)||x.betrag<0))return"Bitte Sonderleistungen vollständig ausfüllen.";
+  if(!d.datum)return"Bitte Datum auswählen.";if(d.kmModus==="pauschal"&&(!Number.isFinite(d.kmPauschal)||d.kmPauschal<0))return"Ungültiger Fahrtkostenbetrag.";if(d.sonderleistungen.some(x=>!x.name||!Number.isFinite(x.betrag)||x.betrag<0))return"Bitte Sonderleistungen vollständig ausfüllen.";
   if(d.abwesenheit)return"";
   if(!d.beginn||!d.ende)return"Bitte Beginn und Ende eintragen.";
   if(!!d.beginn2!==!!d.ende2)return"Zweiter Dienst: Bitte Beginn und Ende vollständig eintragen.";
@@ -434,7 +434,7 @@ function eintragLaden(e){
   renderFahrtInfo();
   renderAktuelleFahrten();
   stundenBerechnen();
-  editMode(true);renderEinzelstatus(e);
+  editMode(true);renderEinzelstatus(e);if(e.bezahlt){beginn.disabled=true;ende.disabled=true;beginn2.disabled=true;ende2.disabled=true;}if(e.kmBezahlt){$("kmModus").disabled=true;$("kmPauschal").disabled=true;$("fahrtHinzufuegen").disabled=true;}
   window.scrollTo({top:0,behavior:"smooth"});
 }
 function arbeitszeitKopieren(mitFahrten=false){
@@ -477,7 +477,7 @@ function resetForm(heute=true){
   if(heute){datum.value=iso(new Date());state.ausgewaehlt=datum.value}
   handleAbwesenheit();renderFahrtInfo();renderAktuelleFahrten();stundenBerechnen();
 }
-function editMode(a){$("einzelStatus").hidden=!a;save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;copyTimeTrips.hidden=!a;copyTimeTrips.disabled=a&&state.aktuelleFahrten.length===0;buttonRow.classList.toggle("edit-mode",a)}
+function editMode(a){$("einzelStatus").hidden=!a;if(!a){beginn.disabled=false;ende.disabled=false;beginn2.disabled=false;ende2.disabled=false;$("kmModus").disabled=false;$("kmPauschal").disabled=false;}save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;copyTimeTrips.hidden=!a;copyTimeTrips.disabled=a&&state.aktuelleFahrten.length===0;buttonRow.classList.toggle("edit-mode",a)}
 
 function renderKalender(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth(),first=new Date(y,m,1),last=new Date(y,m+1,0),offset=(first.getDay()+6)%7,map=new Map(state.eintraege.map(e=>[e.datum,e])),g=$("calendarGrid");
