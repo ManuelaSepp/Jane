@@ -663,17 +663,23 @@ function renderEinzelstatus(e){
 async function leistungBezahlt(art,id=""){
  if(!state.originalDatum)return;
  if(!confirm("Diese Leistung endgültig als bezahlt festschreiben?"))return;
- await schreiben("setLeistungBezahlt",{datum:state.originalDatum,art,id,bezahlt:true});
- zeige("Zahlungsstatus bestätigt. Daten werden aktualisiert.","success");
- setTimeout(()=>ladeJahr(state.kalenderDatum.getFullYear(),true),1800);
+ try{
+  await schreiben("setLeistungBezahlt",{datum:state.originalDatum,art,id,bezahlt:true});
+  zeige("Zahlungsstatus bestätigt.","success");
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  const e=state.jahresEintraege.find(x=>x.datum===state.originalDatum);
+  if(e)eintragLaden(e);
+ }catch(err){zeige("Zahlung konnte nicht bestätigt werden: "+err.message,"error");}
 }
 async function kilometersatzSpeichern(){
  const ab=$("kmSatzMonat").value,satz=Number($("kmSatzWert").value.replace(",","."));
  if(!/^\d{4}-\d{2}$/.test(ab)||!Number.isFinite(satz)||satz<0)return zeige("Ungültiger Kilometersatz.","error");
- await schreiben("saveKilometersatz",{ab,satz});
- const x=state.kilometersaetze.find(v=>v.ab===ab);if(x)x.satz=satz;else state.kilometersaetze.push({ab,satz});
- state.kilometersaetze.sort((a,b)=>a.ab.localeCompare(b.ab));renderStatistik();
- zeige("Kilometersatz gespeichert.","success");
+ try{
+  await schreiben("saveKilometersatz",{ab,satz});
+  const x=state.kilometersaetze.find(v=>v.ab===ab);if(x)x.satz=satz;else state.kilometersaetze.push({ab,satz});
+  state.kilometersaetze.sort((a,b)=>a.ab.localeCompare(b.ab));renderStatistik();
+  zeige("Kilometersatz gespeichert.","success");
+ }catch(err){zeige("Kilometersatz nicht gespeichert: "+err.message,"error");}
 }
 function renderStatistik(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth()+1,mw=monatsWerte(y,m),jw=jahresWerte(y);
