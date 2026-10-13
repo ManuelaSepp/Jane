@@ -319,7 +319,7 @@ async function ladeJahr(jahr,leise=false){
     aktualisiereFahrzielNamen();
     state.kilometersaetze=(Array.isArray(r.kilometersaetze)?r.kilometersaetze:[]).sort((a,b)=>a.ab.localeCompare(b.ab));state.stundenloehne=(Array.isArray(r.stundenloehne)?r.stundenloehne:[])
       .map(x=>({ab:String(x.ab||""),lohn:Number(x.lohn||0)}))
-      .filter(x=>/^\d{4}-\d{2}$/.test(x.ab)&&x.lohn>0)
+      .filter(x=>/^\d{4}-\d{2}(-\d{2})?$/.test(x.ab)&&x.lohn>0)
       .sort((a,b)=>a.ab.localeCompare(b.ab));
     state.startAdresse=String(r.startAdresse||"");
     $("startAdresse").value=state.startAdresse;
