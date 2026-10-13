@@ -80,7 +80,7 @@ async function init(){
   datum.value=iso(new Date());
   state.ausgewaehlt=datum.value;
   state.kalenderDatum=ausIso(datum.value);
-  $("lohnMonat").value=datum.value.slice(0,7);
+  $("lohnMonat").value=datum.value;
   stundenBerechnen();
 
   renderLeerzustand();
@@ -724,7 +724,7 @@ function renderMonatsGrid(){
   });
 }
 async function monatWechseln(delta){
-  const altJ=state.kalenderDatum.getFullYear();state.kalenderDatum=new Date(altJ,state.kalenderDatum.getMonth()+delta,1);const neuJ=state.kalenderDatum.getFullYear();state.ausgewaehlt=iso(state.kalenderDatum);$("lohnMonat").value=iso(state.kalenderDatum).slice(0,7);renderStundenlohn();
+  const altJ=state.kalenderDatum.getFullYear();state.kalenderDatum=new Date(altJ,state.kalenderDatum.getMonth()+delta,1);const neuJ=state.kalenderDatum.getFullYear();state.ausgewaehlt=iso(state.kalenderDatum);$("lohnMonat").value=iso(state.kalenderDatum);renderStundenlohn();
   if(state.cacheJahr===neuJ){monatLokalSetzen(neuJ,state.kalenderDatum.getMonth()+1,true)}else if(pruefeKonfiguration())await ladeJahr(neuJ);
 }
 function datumGeaendert(){if(!datum.value)return;state.ausgewaehlt=datum.value;const d=ausIso(datum.value);if(d.getFullYear()!==state.kalenderDatum.getFullYear()||d.getMonth()!==state.kalenderDatum.getMonth()){state.kalenderDatum=new Date(d.getFullYear(),d.getMonth(),1);if(state.cacheJahr===d.getFullYear())monatLokalSetzen(d.getFullYear(),d.getMonth()+1,true);else if(pruefeKonfiguration())ladeJahr(d.getFullYear())}else{renderKalender();renderWoche()}}
