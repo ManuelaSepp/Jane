@@ -1,0 +1,6 @@
+{
+  "name": "jane-payment-tests",
+  "private": true,
+  "scripts": {"test": "node --test tests/payments.test.cjs && node tests/frontend.cjs"},
+  "devDependencies": {"jsdom": "26.1.0"}
+}
