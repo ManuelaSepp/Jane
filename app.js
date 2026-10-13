@@ -332,16 +332,16 @@ function monatLokalSetzen(jahr,monat,rendern=true){
 function renderAlles(){renderKalender();renderWoche();renderStatistik();renderMonatsGrid()}
 function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 
-function schreiben(action,payload){
-  const body=new URLSearchParams({action,payload:JSON.stringify(payload),zeit:String(Date.now())});
-  fetch(SCRIPT_URL,{
-    method:"POST",
-    mode:"no-cors",
-    body,
-    cache:"no-store",
-    keepalive:true
-  }).catch(err=>console.error("Hintergrund-Speicherung fehlgeschlagen:",err));
-  return Promise.resolve();
+async function schreiben(action,payload){
+ const requestId="jane_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+ const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now())});
+ await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",body,cache:"no-store"});
+ for(let i=0;i<30;i++){
+  await new Promise(resolve=>setTimeout(resolve,900));
+  const result=await jsonp({action:"writeStatus",requestId});
+  if(result.done){if(!result.ok)throw new Error(result.message||"Speicherung fehlgeschlagen.");return;}
+ }
+ throw new Error("Keine Bestätigung vom Google Apps Script. Bitte Daten vor erneutem Speichern prüfen.");
 }
 
 async function speichern(e){
@@ -670,7 +670,7 @@ async function leistungBezahlt(art,id=""){
  if(!state.originalDatum)return;
  if(!confirm("Diese Leistung endgültig als bezahlt festschreiben?"))return;
  await schreiben("setLeistungBezahlt",{datum:state.originalDatum,art,id,bezahlt:true});
- zeige("Zahlungsstatus übermittelt. Bitte nach dem Neuladen prüfen.","");
+ zeige("Zahlungsstatus bestätigt. Daten werden aktualisiert.","success");
  setTimeout(()=>ladeJahr(state.kalenderDatum.getFullYear(),true),1800);
 }
 async function kilometersatzSpeichern(){
@@ -679,7 +679,7 @@ async function kilometersatzSpeichern(){
  await schreiben("saveKilometersatz",{ab,satz});
  const x=state.kilometersaetze.find(v=>v.ab===ab);if(x)x.satz=satz;else state.kilometersaetze.push({ab,satz});
  state.kilometersaetze.sort((a,b)=>a.ab.localeCompare(b.ab));renderStatistik();
- zeige("Kilometersatz übermittelt. Bitte nach dem Neuladen prüfen.","");
+ zeige("Kilometersatz gespeichert.","success");
 }
 function renderStatistik(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth()+1,mw=monatsWerte(y,m),jw=jahresWerte(y);
