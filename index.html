@@ -49,7 +49,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div><label for="ende2">Zweiter Dienst – Ende (optional)</label><input type="text" id="ende2" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
 </div>
 <div class="info-box">Berechnete Stunden: <span id="stundenAnzeige">0</span></div>
-<label for="abwesenheit">Abwesenheit</label>
+<div style="margin-top:12px"><label>Sonderleistungen (optional)</label><div id="sonderListe"></div><button type="button" onclick="sonderleistungHinzufuegen()">+ Sonderleistung hinzufügen</button></div><label for="abwesenheit">Abwesenheit</label>
 <select id="abwesenheit"><option value="">Keine</option><option>Urlaub</option><option>Krank</option></select>
 <label for="fahrziel">Fahrt hinzufügen</label>
 <div class="fahrt-add-row">
@@ -79,7 +79,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 <div class="stat"><strong id="monatKm">0 km</strong><span>Kilometer im Monat</span></div>
 <div class="stat"><strong id="monatBezahlt">0 h</strong><span>davon bezahlt</span><small id="monatBezahltEuro">–</small></div>
 <div class="stat"><strong id="monatOffen">0 h</strong><span>noch offen</span><small id="monatOffenEuro">–</small></div>
-<div class="stat stat-wide"><strong id="monatVerdienst">–</strong><span>Verdienst im Monat</span></div>
+<div class="stat stat-wide"><strong id="monatVerdienst">–</strong><small style="display:block">Davon Sonderleistungen: <strong id="monatSonder">0,00 €</strong></small><span>Verdienst im Monat</span></div>
 </div>
 <div class="calendar-head"><button id="prevMonth" type="button">‹</button><div id="monthLabel"></div><button id="nextMonth" type="button">›</button></div>
 <div id="calendarGrid" class="calendar-grid"></div>
@@ -145,7 +145,7 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=1.8"></script>
-<script src="app.js?v=1.9.0"></script>
+<script src="app.js?v=1.10.0"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./service-worker.js").catch(console.error)}</script>
 </body>
