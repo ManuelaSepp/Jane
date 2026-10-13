@@ -228,7 +228,7 @@ function renderAktuelleFahrten(){
     const info=document.createElement("div");
     info.innerHTML=`<strong>${htmlSicher(f.fahrziel)}</strong><small>Hin & Rück: ${format(f.kilometer)} km</small>`;
     const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.disabled=!!f.bezahlt||!!state.jahresEintraege.find(x=>x.datum===state.originalDatum)?.kmBezahlt;b.onclick=()=>fahrtEntfernen(i);
-    d.append(info,b);if(state.originalDatum&&f.id){const pay=document.createElement("button");pay.type="button";pay.textContent=f.bezahlt?"✓ Bezahlt":"Fahrt bezahlt";pay.disabled=!!f.bezahlt;pay.onclick=()=>leistungBezahlt("fahrt",f.id);d.append(pay);}g.appendChild(d);
+    d.append(info,b);if(state.originalDatum&&f.id&&$("kmModus").value==="km"){const pay=document.createElement("button");pay.type="button";pay.textContent=f.bezahlt?"✓ Bezahlt":"Fahrt bezahlt";pay.disabled=!!f.bezahlt;pay.onclick=()=>leistungBezahlt("fahrt",f.id);d.append(pay);}g.appendChild(d);
   });
   const km=state.aktuelleFahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   $("fahrtGesamtKm").textContent=format(km)+" km";
@@ -430,6 +430,9 @@ function eintragLaden(e){
     kilometer:Number(e.kilometer||0)
   }]:[]);
   fahrziel.value="";
+  $("zweiterDienstDetails").open=!!(e.beginn2||e.ende2);
+  $("sonderDetails").open=!!(e.sonderleistungen||[]).length;
+  $("fahrtenDetails").open=!!(state.aktuelleFahrten.length||e.kmModus==="pauschal");
   handleAbwesenheit();
   renderFahrtInfo();
   renderAktuelleFahrten();
@@ -473,7 +476,7 @@ function arbeitszeitKopieren(mitFahrten=false){
   datum.focus();
 }
 function resetForm(heute=true){
-  state.originalDatum=null;editMode(false);beginn.value="";ende.value="";beginn2.value="";ende2.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];sonderleistungenSetzen([]);$("kmModus").value="km";$("kmPauschal").value="";
+  state.originalDatum=null;editMode(false);beginn.value="";ende.value="";beginn2.value="";ende2.value="";abwesenheit.value="";notiz.value="";fahrziel.value="";state.aktuelleFahrten=[];sonderleistungenSetzen([]);$("kmModus").value="km";$("kmPauschal").value="";$("zweiterDienstDetails").open=false;$("sonderDetails").open=false;$("fahrtenDetails").open=false;
   if(heute){datum.value=iso(new Date());state.ausgewaehlt=datum.value}
   handleAbwesenheit();renderFahrtInfo();renderAktuelleFahrten();stundenBerechnen();
 }
