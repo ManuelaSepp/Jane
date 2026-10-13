@@ -788,7 +788,7 @@ function exportPdf(){
       const zeit=(a,b)=>a&&b?htmlSicher(a+" – "+b):"–";
       const dienste='<div><strong>1. Dienst:</strong> '+zeit(z.beginn,z.ende)+'</div>'+(z.beginn2||z.ende2?'<div><strong>2. Dienst:</strong> '+zeit(z.beginn2,z.ende2)+'</div>':'');
       const lohn=original&&original.bezahlt&&original.stundenFix!=null&&z.stunden>0?Number(original.stundenFix)/z.stunden:lohnFuerDatum(original?.datum||"");
-      const kmSatz=original?kilometerSatzFuerDatum(original.datum):null;
+      const kmSatz=original?(original.kmBezahlt&&original.kmFix!=null&&Number(original.kilometer)>0?Number(original.kmFix)/Number(original.kilometer):kilometerSatzFuerDatum(original.datum)):null;
       const stundenText=z.art==="Arbeit"&&z.stunden>0?(lohn==null?"–":euro(lohn)+" / h"):"–";
       const kmText=original&&original.kmModus==="pauschal"?"Pauschale":kmSatz==null?"–":euro(kmSatz)+" / km";
       return `<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td class="dienst">${dienste}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td class="num">${htmlSicher(stundenText)}</td><td class="ziel">${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td class="num">${htmlSicher(kmText)}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td><td>${htmlSicher(z.sonderleistungen.map(x=>x.name).join(" · "))}</td><td class="num">${htmlSicher(euro(z.sonder))}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.gesamt)):"–"}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.bezahlt)):"–"}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.offen)):"–"}</td></tr>`;
