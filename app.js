@@ -35,7 +35,7 @@ $("zahlungBearbeiten").onclick=zahlungBearbeitenStart;
 $("zahlungBezahlt").onclick=()=>zahlungsstatusSetzen(true);
 $("zahlungOffen").onclick=()=>zahlungsstatusSetzen(false);
 $("zahlungAbbrechen").onclick=zahlungBearbeitenEnde;
-$("lohnSpeichern").onclick=stundenlohnSpeichern;$("kmSatzSpeichern").onclick=kilometersatzSpeichern;
+$("sonderVorlageSpeichern").onclick=sonderVorlagenSpeichern;renderSonderVorlagen();$("lohnSpeichern").onclick=stundenlohnSpeichern;$("kmSatzSpeichern").onclick=kilometersatzSpeichern;
 $("lohnMonat").onchange=renderStundenlohn;
 
 function pruefeKonfiguration(){
@@ -235,11 +235,21 @@ function renderAktuelleFahrten(){
   gesamt.classList.remove("hidden");
 }
 function sonderleistungenLesen(){return [...document.querySelectorAll(".sonder-zeile")].map(r=>({id:r.dataset.id,name:r.querySelector(".sonder-name").value.trim(),betrag:r.querySelector(".sonder-betrag").value.trim()===""?NaN:Number(r.querySelector(".sonder-betrag").value.replace(",","."))}));}
+function sonderVorlagenLesen(){try{const v=JSON.parse(localStorage.getItem("jane_sonder_vorlagen_v1")||"[]");return Array.isArray(v)?v.filter(x=>x&&typeof x.name==="string"&&Number.isFinite(Number(x.betrag))):[];}catch(_){return[]}}
+function sonderVorlagenSpeichern(){const name=$("sonderVorlageName").value.trim(),betrag=Number($("sonderVorlageBetrag").value.replace(",","."));if(!name||!Number.isFinite(betrag)||betrag<0)return zeige("Bitte Bezeichnung und gültigen Betrag eingeben.","error");const v=sonderVorlagenLesen();const idx=v.findIndex(x=>x.name.toLocaleLowerCase("de")===name.toLocaleLowerCase("de"));if(idx>=0)v[idx]={name,betrag};else v.push({name,betrag});localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(v));$("sonderVorlageName").value="";$("sonderVorlageBetrag").value="";renderSonderVorlagen();zeige("Vorlage auf diesem Gerät gespeichert.","success");}
+function renderSonderVorlagen(){const box=$("sonderVorlagenListe");box.replaceChildren();for(const v of sonderVorlagenLesen()){const row=document.createElement("div");row.className="entry-trip-item";const txt=document.createElement("span");txt.textContent=v.name+" · "+euro(v.betrag);const del=document.createElement("button");del.type="button";del.textContent="Entfernen";del.onclick=()=>{localStorage.setItem("jane_sonder_vorlagen_v1",JSON.stringify(sonderVorlagenLesen().filter(x=>x.name!==v.name)));renderSonderVorlagen();};row.append(txt,del);box.append(row);}}
 function sonderleistungHinzufuegen(x={}){
  const r=document.createElement("div");r.className="sonder-zeile";r.dataset.id=x.id||("sonder_"+Date.now()+"_"+Math.random().toString(36).slice(2));r.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0";
  const n=document.createElement("input");n.className="sonder-name";n.placeholder="Bezeichnung";n.maxLength=150;n.value=x.name||"";n.style.flex="2";n.disabled=!!x.bezahlt;
+ const auswahl=document.createElement("select");auswahl.className="sonder-vorlage";auswahl.disabled=!!x.bezahlt;
+ const leer=document.createElement("option");leer.value="";leer.textContent="Vorlage auswählen …";auswahl.appendChild(leer);
+ for(const v of sonderVorlagenLesen()){const o=document.createElement("option");o.value=v.name;o.textContent=v.name+" · "+euro(v.betrag);auswahl.appendChild(o);}
+ const frei=document.createElement("option");frei.value="__frei";frei.textContent="Freie Eingabe";auswahl.appendChild(frei);
+ auswahl.onchange=()=>{if(auswahl.value==="__frei"){n.value="";b.value="";n.focus();return;}const v=sonderVorlagenLesen().find(v=>v.name===auswahl.value);if(v){n.value=v.name;b.value=String(v.betrag).replace(".",",");}};
+ n.addEventListener("change",()=>{const v=sonderVorlagenLesen().find(v=>v.name===n.value.trim());if(v)auswahl.value=v.name;});
+ if(sonderVorlagenLesen().some(v=>v.name===n.value))auswahl.value=n.value;
  const b=document.createElement("input");b.className="sonder-betrag";b.placeholder="Pauschale €";b.inputMode="decimal";b.value=x.betrag===undefined?"":String(x.betrag).replace(".",",");b.style.flex="1";b.disabled=!!x.bezahlt;
- const del=document.createElement("button");del.type="button";del.textContent="×";del.onclick=()=>r.remove();del.disabled=!!x.bezahlt;r.append(n,b,del);if(state.originalDatum&&x.id){const pay=document.createElement("button");pay.type="button";pay.textContent=x.bezahlt?"✓ Bezahlt":"Als bezahlt";pay.disabled=!!x.bezahlt;pay.onclick=()=>leistungBezahlt("sonder",x.id);r.append(pay);}$("sonderListe").appendChild(r);
+ const del=document.createElement("button");del.type="button";del.textContent="×";del.onclick=()=>r.remove();del.disabled=!!x.bezahlt;r.append(auswahl,n,b,del);if(state.originalDatum&&x.id){const pay=document.createElement("button");pay.type="button";pay.textContent=x.bezahlt?"✓ Bezahlt":"Als bezahlt";pay.disabled=!!x.bezahlt;pay.onclick=()=>leistungBezahlt("sonder",x.id);r.append(pay);}$("sonderListe").appendChild(r);
 }
 function sonderleistungenSetzen(items){$("sonderListe").replaceChildren();(Array.isArray(items)?items:[]).forEach(sonderleistungHinzufuegen);}
 function sonderSumme(e){return (Array.isArray(e.sonderleistungen)?e.sonderleistungen:[]).reduce((s,x)=>s+Number(x.betrag||0),0);}
