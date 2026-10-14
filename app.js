@@ -985,21 +985,37 @@ async function zahlungSuchenNeu(){
  $("zahlungStatusNeu").textContent=v.length?"Vorschlag gefunden. Bitte jede Zuordnung prüfen und ggf. anpassen.":"Kein vollständig zuordenbarer Vorschlag. Bitte Betrag und offene Leistungen prüfen.";
  renderZahlungsEntwurf();
 }
+let offeneZahlungsBuchung=null;
 async function zahlungBuchenNeu(){
  const date=$("zahlungDatumNeu").value,cent=zahlungsCents($("zahlungBetragNeu").value);
  const items=state.paymentEntwurf;
- if(!date||cent===null||!items.length||items.reduce((s,x)=>s+x.cent,0)!==cent)return;
+ if(offeneZahlungsBuchung){$("zahlungStatusNeu").textContent="Vorherige Zahlung noch ungeklärt. Bitte zuerst die Historie prüfen.";return;}
+ if(!date||cent===null||!items.length||items.some(x=>x.cent<=0)||items.reduce((s,x)=>s+x.cent,0)!==cent)return;
  if(!confirm("Zahlung über "+euro(cent/100)+" vom "+date.split("-").reverse().join(".")+" mit "+items.length+" Zuordnung(en) verbindlich buchen?"))return;
  const payload={id:"janezahlung_"+Date.now()+"_"+Math.random().toString(36).slice(2),datum:date,betrag:cent/100,notiz:"",positionen:items.map(x=>({datum:x.p.datum,art:x.p.art,id:x.p.id||"",betragCent:x.cent,gesamtCent:x.p.gesamtCent}))};
+ offeneZahlungsBuchung=payload;
  $("zahlungBuchenNeu").disabled=true;
  try{
   await schreiben("recordPayment",payload);
+  offeneZahlungsBuchung=null;
   state.paymentEntwurf=[];$("zahlungBetragNeu").value="";
   await ladeJahr(state.kalenderDatum.getFullYear(),true);
   await zahlungenLaden();renderZahlungsEntwurf();
   $("zahlungStatusNeu").textContent="Zahlung gespeichert.";
- }catch(e){$("zahlungStatusNeu").textContent="Nicht bestätigt: "+e.message+" Bitte Zahlungshistorie prüfen, bevor du erneut buchst.";await zahlungenLaden();renderZahlungsEntwurf();}
+ }catch(e){
+  try{
+   await zahlungenLaden();
+   if(state.paymentJournal.some(z=>z.id===payload.id)){
+    offeneZahlungsBuchung=null;state.paymentEntwurf=[];$("zahlungBetragNeu").value="";
+    await ladeJahr(state.kalenderDatum.getFullYear(),true);renderZahlungsEntwurf();
+    $("zahlungStatusNeu").textContent="Zahlung im Journal bestätigt.";return;
+   }
+  }catch(_){}
+  $("zahlungStatusNeu").textContent="Speicherstatus ungeklärt. Nicht erneut buchen! Zahlungs-ID: "+payload.id+". "+e.message;
+  $("zahlungBuchenNeu").disabled=true;
+ }
 }
+
 $("zahlungDatumNeu").value=iso(new Date());
 $("zahlungSuchenNeu").onclick=zahlungSuchenNeu;
 $("zahlungBuchenNeu").onclick=zahlungBuchenNeu;
