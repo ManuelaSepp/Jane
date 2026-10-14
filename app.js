@@ -932,6 +932,7 @@ async function zahlungenLaden(){
   if(!r.ok||r.paymentVersion!==1)throw Error(r.message||"Zahlungsmodul nicht verfügbar");
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
   renderZahlungsHistorie();
+  renderZahlungsAuswahl();
   renderStatistik();
  }catch(e){state.paymentVersion=0;$("zahlungStatusNeu").textContent="Zahlungsverwaltung nicht verfügbar: "+e.message;$("zahlungBuchenNeu").disabled=true;}
 }
@@ -1015,6 +1016,27 @@ function zahlungsVorschlag(cents){
  for(const p of candidates){if(rest<=0)break;const cent=Math.min(rest,p.offenCent);result.push({p,cent});rest-=cent;}
  return rest===0?result:[];
 }
+function renderZahlungsAuswahl(){
+ const select=$("zahlungManuellNeu");if(!select)return;
+ select.replaceChildren();
+ const first=document.createElement("option");first.value="";first.textContent="Bitte auswählen";select.appendChild(first);
+ for(const p of zahlungsKandidaten()){
+  const option=document.createElement("option");
+  option.value=zahlungKennung(p);
+  option.textContent=p.datum+" · "+p.label+" · offen "+euro(p.offenCent/100);
+  select.appendChild(option);
+ }
+}
+function zahlungHinzufuegenNeu(){
+ const key=$("zahlungManuellNeu").value;
+ const p=zahlungsKandidaten().find(x=>zahlungKennung(x)===key);
+ if(!p)return;
+ if(state.paymentEntwurf.some(x=>zahlungKennung(x.p)===key))return;
+ const total=zahlungsCents($("zahlungBetragNeu").value);
+ const assigned=state.paymentEntwurf.reduce((sum,x)=>sum+x.cent,0);
+ state.paymentEntwurf.push({p,cent:Math.min(p.offenCent,Math.max(0,(total||0)-assigned))});
+ renderZahlungsEntwurf();
+}
 function renderZahlungsEntwurf(){
  const g=$("zahlungTrefferNeu");g.replaceChildren();
  const gesamt=zahlungsCents($("zahlungBetragNeu").value);
@@ -1050,7 +1072,7 @@ function renderZahlungsEntwurf(){
  }
  const rest=gesamt===null?null:gesamt-sum;
  $("zahlungRestNeu").textContent=rest===null?"Bitte gültigen Zahlungsbetrag eingeben.":"Zugeordnet: "+euro(sum/100)+" · Rest: "+euro(rest/100);
- $("zahlungBuchenNeu").disabled=!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&$("zahlungDatumNeu").value);
+ $("zahlungBuchenNeu").disabled=!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&state.paymentEntwurf.every(x=>x.cent>0)&&$("zahlungDatumNeu").value);
 }
 async function zahlungSuchenNeu(){
  if(state.paymentVersion!==1){await zahlungenLaden();if(state.paymentVersion!==1)return;}
@@ -1097,6 +1119,7 @@ async function zahlungBuchenNeu(){
 
 $("zahlungDatumNeu").value=iso(new Date());
 $("zahlungSuchenNeu").onclick=zahlungSuchenNeu;
+$("zahlungHinzufuegenNeu").onclick=zahlungHinzufuegenNeu;
 $("zahlungBuchenNeu").onclick=zahlungBuchenNeu;
 $("zahlungBetragNeu").oninput=()=>{state.paymentEntwurf=[];renderZahlungsEntwurf()};
 $("zahlungDatumNeu").onchange=renderZahlungsEntwurf;
