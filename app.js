@@ -939,13 +939,43 @@ function renderZahlungsHistorie(){
  const g=$("zahlungHistorieNeu");g.replaceChildren();
  const z=[...state.paymentJournal].sort((a,b)=>b.datum.localeCompare(a.datum));
  if(!z.length){g.textContent="Noch keine Zahlungen im neuen Journal.";return;}
+ const reversed=new Set(z.filter(p=>p.stornoVon).map(p=>p.stornoVon));
  for(const p of z){
   const d=document.createElement("div");d.style.cssText="border-top:1px solid #ddd;padding:8px 0";
-  const datum=p.datum.split("-").reverse().join(".");
-  d.textContent=datum+" · "+euro(p.betrag)+" · "+p.positionen.length+" Zuordnung(en)"+(p.notiz?" · "+p.notiz:"");
+  const datum=String(p.datum||"").split("-").reverse().join(".");
+  const title=document.createElement("div");
+  title.textContent=datum+" · "+euro(p.betrag)+" · "+(p.stornoVon?"Stornierung":"Zahlung")+(reversed.has(p.id)?" (storniert)":"");
+  d.appendChild(title);
+  for(const item of p.positionen||[]){
+   const line=document.createElement("div");line.style.cssText="font-size:.9em;padding:2px 0 2px 12px";
+   line.textContent=String(item.datum||"")+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
+   d.appendChild(line);
+  }
+  if(p.betrag>0&&!reversed.has(p.id)){
+   const btn=document.createElement("button");btn.type="button";btn.textContent="Zahlung stornieren";
+   btn.onclick=()=>zahlungStornierenNeu(p);
+   d.appendChild(btn);
+  }
   g.appendChild(d);
  }
 }
+let offeneStornierung=null;
+async function zahlungStornierenNeu(p){
+ if(offeneStornierung||offeneZahlungsBuchung)return;
+ if(!confirm("Zahlung vom "+p.datum+" über "+euro(p.betrag)+" vollständig stornieren? Die Zuordnungen werden wieder offen."))return;
+ offeneStornierung=p.id;
+ try{
+  await schreiben("reversePayment",{id:p.id,datum:iso(new Date())});
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  await zahlungenLaden();
+  $("zahlungStatusNeu").textContent="Zahlung storniert.";
+  offeneStornierung=null;
+ }catch(e){
+  try{await zahlungenLaden();if(state.paymentJournal.some(x=>x.stornoVon===p.id)){offeneStornierung=null;$("zahlungStatusNeu").textContent="Stornierung im Journal bestätigt.";return;}}catch(_){}
+  $("zahlungStatusNeu").textContent="Stornierung nicht bestätigt. Bitte Historie prüfen, bevor du erneut stornierst: "+e.message;
+ }
+}
+
 function zahlungsKandidaten(){
  return state.paymentPositionen.filter(p=>p.offenCent>0&&p.gesamtCent!==null&&!p.altBezahlt);
 }
