@@ -958,7 +958,7 @@ function renderZahlungsHistorie(){
    d.appendChild(title);
    for(const item of p.positionen||[]){
     const line=document.createElement("div");line.style.cssText="font-size:.9em;padding:2px 0 2px 12px";
-    line.textContent=String(item.datum||"")+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
+    line.textContent=String(item.datum||"").split("-").reverse().join(".")+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
     d.appendChild(line);
    }
    if(p.betrag>0&&!reversed.has(p.id)){
