@@ -918,10 +918,12 @@ function zeige(t,k){meldung.textContent=t;meldung.className=k||""}
 
 /* Zahlungsjournal V1: separat vom bisherigen Zahlungsstatus; keine automatische Buchung. */
 function zahlungsCents(text){
- const s=String(text||"").trim().replace(/\s/g,"").replace(/€/g,"");
- const norm=s.includes(",")?s.replace(/\./g,"").replace(",","."):s;
- const n=Number(norm);
- return Number.isFinite(n)&&n>0&&Math.round(n*100)===n*100?Math.round(n*100):null;
+ const raw=String(text??"").trim().replace(/\s/g,"").replace(/€/g,"");
+ if(!raw)return null;
+ const norm=raw.includes(",")?raw.replace(/\./g,"").replace(",","."):raw;
+ if(!/^\d+(?:\.\d{1,2})?$/.test(norm))return null;
+ const n=Number(norm),cent=Math.round(n*100);
+ return Number.isSafeInteger(cent)&&cent>0?cent:null;
 }
 function zahlungKennung(p){return JSON.stringify([p.datum,p.art,p.id||""])}
 async function zahlungenLaden(){
