@@ -968,6 +968,27 @@ function renderZahlungsEntwurf(){
   const label=document.createElement("label");label.style.flex="1 1 220px";label.textContent=item.p.datum.split("-").reverse().join(".")+" · "+item.p.label+" (offen "+euro(item.p.offenCent/100)+")";
   const field=document.createElement("input");field.type="number";field.min="0";field.max=String(item.p.offenCent/100);field.step="0.01";field.value=(item.cent/100).toFixed(2);field.style.width="100px";field.setAttribute("aria-label","Zuordnung in Euro");
   field.onchange=()=>{const n=zahlungsCents(field.value);item.cent=n===null?0:Math.min(n,item.p.offenCent);renderZahlungsEntwurf();};
+  if(item.p.art==="stunden"&&item.p.gesamtCent>0){
+   const entry=state.jahresEintraege.find(e=>e.datum===item.p.datum);
+   const totalHours=Number(entry?.stunden||0);
+   if(totalHours>0){
+    const alreadyPaid=Math.max(0,Number(item.p.bezahltCent||0));
+    const maxHours=totalHours*Math.max(0,item.p.offenCent)/item.p.gesamtCent;
+    const hours=document.createElement("input");
+    hours.type="number";hours.min="0";hours.max=String(maxHours);hours.step="0.01";
+    hours.value=(totalHours*item.cent/item.p.gesamtCent).toFixed(2);
+    hours.style.width="90px";hours.setAttribute("aria-label","Bezahlte Teilstunden");
+    hours.title="Teilstunden für diesen Arbeitstag; Betrag wird automatisch berechnet";
+    hours.onchange=()=>{
+     const h=Number(String(hours.value).replace(",","."));
+     if(!Number.isFinite(h)||h<0||h>maxHours){renderZahlungsEntwurf();return;}
+     item.cent=Math.min(item.p.offenCent,Math.round(h*item.p.gesamtCent/totalHours));
+     renderZahlungsEntwurf();
+    };
+    const unit=document.createElement("span");unit.textContent="h bezahlt";
+    line.append(hours,unit);
+   }
+  }
   const remove=document.createElement("button");remove.type="button";remove.textContent="Entfernen";remove.onclick=()=>{state.paymentEntwurf=state.paymentEntwurf.filter(x=>x!==item);renderZahlungsEntwurf()};
   line.append(label,field,remove);g.appendChild(line);sum+=item.cent;
  }
