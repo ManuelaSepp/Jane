@@ -808,6 +808,7 @@ function renderMonatsGrid(){
   const y=state.kalenderDatum.getFullYear(),namen=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],g=$("monatsGrid");g.innerHTML="";
   namen.forEach((n,i)=>{
     const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0,offenStunden:0};
+    if(state.paymentVersion===1&&state.cacheJahr===y)w.offenStunden=journalStunden(w.daten).offen;
     const d=document.createElement("div");d.className="year-month";
     d.innerHTML=`<span>${n}</span><strong>${format(w.stunden)} h</strong><small>${format(w.km)} km</small><small>${format(w.offenStunden)} h offen</small>`;
     g.appendChild(d)
@@ -933,7 +934,7 @@ async function zahlungenLaden(){
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
   renderZahlungsHistorie();
   renderZahlungsAuswahl();
-  renderStatistik();
+  renderStatistik();renderMonatsGrid();
  }catch(e){state.paymentVersion=0;$("zahlungStatusNeu").textContent="Zahlungsverwaltung nicht verfügbar: "+e.message;$("zahlungBuchenNeu").disabled=true;}
 }
 function renderZahlungsHistorie(){
