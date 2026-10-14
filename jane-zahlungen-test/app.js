@@ -939,26 +939,35 @@ async function zahlungenLaden(){
 }
 function renderZahlungsHistorie(){
  const g=$("zahlungHistorieNeu");g.replaceChildren();
- const z=[...state.paymentJournal].sort((a,b)=>b.datum.localeCompare(a.datum));
+ const z=[...state.paymentJournal].sort((a,b)=>String(b.datum).localeCompare(String(a.datum)));
  if(!z.length){g.textContent="Noch keine Zahlungen im neuen Journal.";return;}
  const reversed=new Set(z.filter(p=>p.stornoVon).map(p=>p.stornoVon));
- for(const p of z){
-  const d=document.createElement("div");d.style.cssText="border-top:1px solid #ddd;padding:8px 0";
-  const datum=String(p.datum||"").split("-").reverse().join(".");
-  const title=document.createElement("div");
-  title.textContent=datum+" · "+euro(p.betrag)+" · "+(p.stornoVon?"Stornierung":"Zahlung")+(reversed.has(p.id)?" (storniert)":"");
-  d.appendChild(title);
-  for(const item of p.positionen||[]){
-   const line=document.createElement("div");line.style.cssText="font-size:.9em;padding:2px 0 2px 12px";
-   line.textContent=String(item.datum||"")+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
-   d.appendChild(line);
+ const groups=new Map();
+ for(const p of z){const month=String(p.datum||"").slice(0,7);if(!groups.has(month))groups.set(month,[]);groups.get(month).push(p);}
+ for(const [month,entries] of groups){
+  const section=document.createElement("details");section.style.cssText="border-top:1px solid #ddd;padding:10px 0";
+  const summary=document.createElement("summary");summary.style.cssText="cursor:pointer;font-weight:700";
+  const [year,mon]=month.split("-");
+  const monthName=new Date(Number(year),Number(mon)-1,1).toLocaleDateString("de-DE",{month:"long",year:"numeric"});
+  summary.textContent=monthName+" · "+entries.length+" Buchung(en)";
+  section.appendChild(summary);
+  for(const p of entries){
+   const d=document.createElement("div");d.style.cssText="border-top:1px solid #eee;padding:8px 0";
+   const title=document.createElement("div");
+   title.textContent=String(p.datum||"").split("-").reverse().join(".")+" · "+euro(p.betrag)+" · "+(p.stornoVon?"Stornierung":"Zahlung")+(reversed.has(p.id)?" (storniert)":"");
+   d.appendChild(title);
+   for(const item of p.positionen||[]){
+    const line=document.createElement("div");line.style.cssText="font-size:.9em;padding:2px 0 2px 12px";
+    line.textContent=String(item.datum||"")+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
+    d.appendChild(line);
+   }
+   if(p.betrag>0&&!reversed.has(p.id)){
+    const btn=document.createElement("button");btn.type="button";btn.textContent="Zahlung stornieren";
+    btn.onclick=()=>zahlungStornierenNeu(p);d.appendChild(btn);
+   }
+   section.appendChild(d);
   }
-  if(p.betrag>0&&!reversed.has(p.id)){
-   const btn=document.createElement("button");btn.type="button";btn.textContent="Zahlung stornieren";
-   btn.onclick=()=>zahlungStornierenNeu(p);
-   d.appendChild(btn);
-  }
-  g.appendChild(d);
+  g.appendChild(section);
  }
 }
 let offeneStornierung=null;
