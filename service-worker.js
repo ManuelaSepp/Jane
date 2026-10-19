@@ -1,5 +1,5 @@
-const CACHE_NAME="arbeitszeit-fahrten-v3.0";
-const APP_ASSETS=["./","./index.html","./config.js?v=3.0","./app.js?v=3.0","./manifest.json","./icons/favicon-32.png","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png"];
+const CACHE_NAME="arbeitszeit-fahrten-journal-reset-v2";
+const APP_ASSETS=["./","./index.html","./config.js?v=3.0","./app.js?v=journal-reset-v2","./manifest.json","./icons/favicon-32.png","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png"];
 self.addEventListener("install",event=>{event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_ASSETS)));self.skipWaiting()});
 self.addEventListener("activate",event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME).map(k=>caches.delete(k)))));self.clients.claim()});
 self.addEventListener("fetch",event=>{

@@ -1,0 +1,23 @@
+name: Payment preparation tests
+on:
+  pull_request:
+    paths:
+      - 'app.js'
+      - 'backend/**'
+      - '*test.cjs'
+      - 'tools/**'
+      - '.github/workflows/payment-preparation-tests.yml'
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test backend-payments.test.cjs payment-regression.test.cjs tools/payment-reset-plan.test.cjs
+      - run: node --check app.js
+      - run: node -e "new (require('node:vm').Script)(require('node:fs').readFileSync('backend/Code.gs','utf8'))"
+      - run: git diff --check
