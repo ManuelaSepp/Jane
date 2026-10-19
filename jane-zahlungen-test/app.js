@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const state={
   eintraege:[],fahrziele:[],kalenderDatum:new Date(),ausgewaehlt:null,originalDatum:null,
-  cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
+  cacheJahr:null,jahresEintraege:[],jahresBestaetigung:null,jahresLadezustand:"laden",startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
   zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[],paymentVersion:0,paymentPositionen:[],paymentJournal:[],paymentEntwurf:[],paymentLadezustand:"laden"
 };
 let jsonpSequenz=0,ladeSequenz=0,zahlungsLadeSequenz=0;
@@ -64,6 +64,7 @@ function ladeLokalenCache(jahr){
     const raw=localStorage.getItem(cacheSchluessel(jahr));
     if(!raw)return false;
     const r=JSON.parse(raw);
+    state.jahresBestaetigung=null;state.jahresLadezustand="laden";
     state.cacheJahr=jahr;
     state.jahresEintraege=Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[];
     state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
@@ -318,10 +319,19 @@ async function laden(jahr){
 }
 async function ladeJahr(jahr,leise=false){
   const seq=++ladeSequenz;
+  state.jahresBestaetigung=null;state.jahresLadezustand="laden";
+  renderKalender();
   setNavigation(true);
   if(!leise)zeige("Lade Daten ...","");
   try{
-    const r=await laden(jahr);if(seq!==ladeSequenz)return;
+    const r=await laden(jahr);if(seq!==ladeSequenz)return null;
+    // Der Request bindet die Antwort ans Jahr; ein explizites Jahr und alle Einträge
+    // müssen dazu passen. Ein fehlendes Array ist keine bestätigte leere Jahresliste.
+    if(r.ok!==true||!Array.isArray(r.eintraegeJahr)||
+      (r.jahr!=null&&Number(r.jahr)!==jahr)||
+      r.eintraegeJahr.some(e=>!e||!/^\d{4}-\d{2}-\d{2}$/.test(e.datum)||Number(e.datum.slice(0,4))!==jahr)){
+      throw Error("Ungültige oder nicht zum Jahr passende Jahresantwort");
+    }
     state.cacheJahr=jahr;
     state.jahresEintraege=(Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[]).map(e=>({
       ...e,
@@ -352,12 +362,17 @@ async function ladeJahr(jahr,leise=false){
     state.startAdresse=String(r.startAdresse||"");
     $("startAdresse").value=state.startAdresse;
     monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);
+    state.jahresBestaetigung={jahr,seq};state.jahresLadezustand="bereit";
     renderFahrzielDropdown();renderFahrziele();renderStundenlohn();renderAlles();
     speichereLokalenCache(jahr);
     if(!leise)zeige("","");
+    return state.jahresBestaetigung;
   }catch(e){
+    if(seq!==ladeSequenz)return null;
+    state.jahresBestaetigung=null;state.jahresLadezustand="fehler";renderKalender();
     if(!leise)zeige("Fehler: "+e.message,"error");
     else console.warn("Hintergrund-Aktualisierung fehlgeschlagen:",e);
+    return null;
   }
   finally{if(seq===ladeSequenz)setNavigation(false)}
 }
@@ -522,11 +537,22 @@ function resetForm(heute=true){
 function editMode(a){$("einzelStatus").hidden=!a;if(!a){beginn.disabled=false;ende.disabled=false;beginn2.disabled=false;ende2.disabled=false;$("kmModus").disabled=false;$("kmPauschal").disabled=false;}save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;copyTimeTrips.hidden=!a;copyTimeTrips.disabled=a&&state.aktuelleFahrten.length===0;buttonRow.classList.toggle("edit-mode",a)}
 
 // Nur Anzeige: Journalpositionen haben Vorrang vor dem alten Ja/Nein-Status.
+function jahresdatenAktuell(){
+  const b=state.jahresBestaetigung;
+  return state.jahresLadezustand==="bereit"&&!!b&&b.seq===ladeSequenz&&
+    b.jahr===state.cacheJahr&&b.jahr===state.kalenderDatum.getFullYear();
+}
+function kalenderZahlungsLadezustand(){
+  if(state.jahresLadezustand==="fehler"||state.paymentLadezustand==="fehler")return "fehler";
+  if(state.jahresLadezustand==="laden"||state.paymentLadezustand==="laden")return "laden";
+  return jahresdatenAktuell()&&state.paymentVersion===1?"bereit":"fehler";
+}
 function kalenderZahlung(e){
-  // Cache-/Legacy-Felder sind vor einer aktuellen Journalantwort kein Zahlungsnachweis.
-  if(state.paymentLadezustand!=="bereit")return {
-    status:state.paymentLadezustand==="fehler"?"unbekannt":"laden",anteil:"",
-    details:state.paymentLadezustand==="fehler"?"Zahlungsstatus unbekannt – Journal konnte nicht geladen werden.":"Zahlungsstatus wird geladen …"
+  // Weder Cache noch eine Journal-/Schreibbestätigung ersetzen die Jahresbestätigung.
+  const ladezustand=kalenderZahlungsLadezustand();
+  if(ladezustand!=="bereit"||Number(String(e.datum).slice(0,4))!==state.cacheJahr)return {
+    status:ladezustand==="laden"?"laden":"unbekannt",anteil:"",
+    details:ladezustand==="laden"?"Zahlungsstatus wird geladen …":"Zahlungsstatus unbekannt – Jahresdaten oder Journal nicht aktuell bestätigt."
   };
   const stunden=Number(e.stunden);
   const positionen=state.paymentVersion===1?state.paymentPositionen.filter(p=>p.datum===e.datum&&p.art==="stunden"):[];
@@ -557,9 +583,10 @@ function renderKalender(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth(),first=new Date(y,m,1),last=new Date(y,m+1,0),offset=(first.getDay()+6)%7,map=new Map(state.eintraege.map(e=>[e.datum,e])),g=$("calendarGrid");
   $("monthLabel").textContent=state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"});g.innerHTML="";
   const status=$("kalenderZahlungsstatus");
-  status.hidden=state.paymentLadezustand==="bereit";
-  status.textContent=status.hidden?"":state.paymentLadezustand==="fehler"?"Zahlungsstatus unbekannt. Journal konnte nicht geladen werden. Bitte erneut laden.":"Zahlungsstatus wird geladen …";
-  g.setAttribute("aria-busy",String(state.paymentLadezustand==="laden"));
+  const ladezustand=kalenderZahlungsLadezustand();
+  status.hidden=ladezustand==="bereit";
+  status.textContent=status.hidden?"":ladezustand==="fehler"?"Zahlungsstatus unbekannt. Jahresdaten oder Journal nicht aktuell bestätigt. Bitte erneut laden.":"Zahlungsstatus wird geladen …";
+  g.setAttribute("aria-busy",String(ladezustand==="laden"));
   const ausgewaehlt=map.get(state.ausgewaehlt),info=$("tagZahlungsinfo");
   info.hidden=!ausgewaehlt||!!ausgewaehlt.abwesenheit||!(Number(ausgewaehlt.stunden)>0);
   info.textContent=info.hidden?"":ausIso(ausgewaehlt.datum).toLocaleDateString("de-DE")+"\n"+kalenderZahlung(ausgewaehlt).details;
@@ -1009,9 +1036,12 @@ async function zahlungenLaden(jahresdaten=null){
    if(versuch===2)throw Error("Zahlungsübersicht noch nicht aktuell; bestätigte Buchungen bleiben erhalten.");
    await schlafen(400);
   }
-  // Nur beim Start: schnelle Journalantwort nicht mit alten Cache-Jahresdaten mischen.
-  if(jahresdaten)await jahresdaten;
+  // Eine erfüllte Promise allein bestätigt keine erfolgreich geladenen Jahresdaten.
+  const bestaetigung=jahresdaten?await jahresdaten:state.jahresBestaetigung;
   if(seq!==zahlungsLadeSequenz)return false;
+  if(!jahresdatenAktuell()||bestaetigung!==state.jahresBestaetigung){
+   throw Error("Jahresdaten nicht aktuell bestätigt");
+  }
   bestaetigteZahlungsIds.clear();
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
   state.paymentLadezustand="bereit";

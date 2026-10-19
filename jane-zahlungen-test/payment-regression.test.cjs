@@ -14,7 +14,9 @@ function fixture(){
  vm.runInContext(source.replace('\ninit();','\n// Startup disabled in isolated regression harness.'),context);
  vm.runInContext(`const originalRenderKalender=renderKalender;renderZahlungsHistorie=()=>{};renderStatistik=()=>{};renderMonatsGrid=()=>{};renderKalender=()=>{renders++};renderZahlungsEntwurf=()=>{};let renders=0;schlafen=async()=>{};`,context);
  const run=code=>vm.runInContext(code,context);
- run(`state.paymentLadezustand='bereit';state.paymentVersion=1;state.paymentPositionen=[{datum:'2026-10-09',art:'stunden',id:'',label:'Arbeitszeit',gesamtCent:10000,bezahltCent:0,offenCent:10000}];
+ run(`state.kalenderDatum=new Date(2026,9,1);state.cacheJahr=2026;
+ state.jahresBestaetigung={jahr:2026,seq:ladeSequenz};state.jahresLadezustand='bereit';
+ state.paymentLadezustand='bereit';state.paymentVersion=1;state.paymentPositionen=[{datum:'2026-10-09',art:'stunden',id:'',label:'Arbeitszeit',gesamtCent:10000,bezahltCent:0,offenCent:10000}];
  const payment={id:'synthetic-payment',datum:'2026-10-19',betrag:25,positionen:[{datum:'2026-10-09',art:'stunden',id:'',betragCent:2500,gesamtCent:10000}]};
  const entry={datum:'2026-10-09',stunden:8,bezahlt:false};`);
  return {run,elements,context};
@@ -24,6 +26,7 @@ function startupFixture(cached=false){
  const f=fixture();
  f.context.cached=cached;
  f.run(`state.paymentLadezustand='laden';state.paymentVersion=0;state.paymentPositionen=[];
+ state.jahresBestaetigung=null;state.jahresLadezustand='laden';
  stundenBerechnen=()=>{};renderLeerzustand=()=>{};renderFahrzielDropdown=()=>{};
  renderFahrziele=()=>{};renderStundenlohn=()=>{};pruefeKonfiguration=()=>true;
  ladeLokalenCache=()=>{if(cached){state.eintraege=[{...entry,bezahlt:true}];state.jahresEintraege=state.eintraege;}return cached};
@@ -70,6 +73,101 @@ test('year retries do not restart the concurrent journal read',async()=>{
  run('pending.init.resolve(yearResponse)');await run('startup');
  assert.equal(run('kalenderZahlung(entry).status'),'teilbezahlt');
  assert.equal(run('calls.filter(x=>x==="paymentOverview").length'),1);
+});
+
+test('both year attempts failing with paid cache and empty valid journal stay unknown; full retry recovers',async()=>{
+ for(const journalFirst of [false,true]){
+  const {run,elements}=startupFixture(true);
+  run(`const startup=init();renderKalender=originalRenderKalender;overviewResponse.positionen=[]`);
+  if(journalFirst)run('pending.paymentOverview.resolve(overviewResponse)');
+  run('pending.init.reject(Error("first year failure"))');await new Promise(setImmediate);
+  run('pending.init.reject(Error("second year failure"))');await new Promise(setImmediate);
+  if(!journalFirst)run('pending.paymentOverview.resolve(overviewResponse)');
+  await run('startup');
+  assert.equal(run('state.eintraege[0].bezahlt'),true);
+  assert.equal(run('state.paymentLadezustand'),'fehler');
+  assert.equal(run('kalenderZahlung(state.eintraege[0]).status'),'unbekannt');
+  assert.equal(run('state.jahresBestaetigung'),null);
+  assert.match(elements.get('kalenderZahlungsstatus').textContent,/unbekannt/);
+  const cell=elements.get('calendarGrid').children.filter(x=>x.dataset.datum==='2026-10-09').at(-1);
+  assert.match(cell.className,/status-unbekannt/);
+  assert.doesNotMatch(cell.className,/status-(bezahlt|teilbezahlt)/);
+  assert.doesNotMatch(cell.innerHTML,/✓ bezahlt/);
+  // Retrying only the journal must not legitimize the old year cache.
+  run('const journalRetry=zahlungenLaden();pending.paymentOverview.resolve(overviewResponse)');
+  assert.equal(await run('journalRetry'),false);
+  assert.equal(run('kalenderZahlung(state.eintraege[0]).status'),'unbekannt');
+  run('const retry=init();pending.init.resolve(yearResponse);pending.paymentOverview.resolve(overviewResponse)');
+  await run('retry');
+  assert.equal(run('kalenderZahlung(state.eintraege[0]).status'),'offen');
+  assert.equal(elements.get('kalenderZahlungsstatus').hidden,true);
+ }
+});
+
+test('invalid year payload or mismatched year never confirms cached paid flags',async()=>{
+ for(const response of [null,{ok:false},{ok:true},{ok:true,eintraegeJahr:{}},
+  {ok:true,jahr:2025,eintraegeJahr:[]},{ok:true,eintraegeJahr:[{datum:'2025-10-09',bezahlt:true}]}]){
+  const {run,context}=startupFixture(true);context.response=response;
+  run('const startup=init();pending.init.resolve(response);pending.paymentOverview.resolve(overviewResponse)');
+  await new Promise(setImmediate);
+  // laden() retries null/ok:false responses; shape/year validation happens afterwards.
+  run('pending.init.resolve(response)');await run('startup');
+  assert.equal(run('kalenderZahlung({...entry,bezahlt:true}).status'),'unbekannt');
+  assert.equal(run('state.paymentLadezustand'),'fehler');
+ }
+});
+
+test('successful empty year is explicitly confirmed and fresh legacy flags remain supported',async()=>{
+ for(const entries of ['[]','[{...entry,bezahlt:true}]']){
+  const {run}=startupFixture(true);
+  run(`yearResponse.eintraegeJahr=${entries};overviewResponse.positionen=[];
+   const startup=init();pending.init.resolve(yearResponse);pending.paymentOverview.resolve(overviewResponse)`);
+  await run('startup');
+  assert.equal(run('state.paymentLadezustand'),'bereit');
+  assert.equal(run('jahresdatenAktuell()'),true);
+  if(entries!=='[]')assert.equal(run('kalenderZahlung(state.eintraege[0]).status'),'bezahlt');
+ }
+});
+
+test('superseded year success/failure cannot confirm or invalidate a newer year',async()=>{
+ for(const staleFailure of [false,true]){
+  const {run}=startupFixture(true);
+  run(`const oldYear=ladeJahr(2026);const oldRead=pending.init;
+   state.kalenderDatum=new Date(2027,0,1);const newYear=ladeJahr(2027);
+   const journal=zahlungenLaden(newYear);
+   pending.paymentOverview.resolve(overviewResponse);pending.init.resolve({ok:true,eintraegeJahr:[]})`);
+  assert.equal(await run('journal'),true);
+  run(staleFailure?'oldRead.reject(Error("obsolete year failure"))':'oldRead.resolve(yearResponse)');
+  await new Promise(setImmediate);
+  if(staleFailure)run('pending.init.reject(Error("obsolete retry failure"))');
+  assert.equal(await run('oldYear'),null);
+  assert.equal(run('state.jahresBestaetigung.jahr'),2027);
+  assert.equal(run('kalenderZahlungsLadezustand()'),'bereit');
+  assert.equal(run('kalenderZahlung({...entry,bezahlt:true}).status'),'unbekannt');
+  run('state.kalenderDatum=new Date(2026,9,1);originalRenderKalender()');
+  assert.equal(run('kalenderZahlung({...entry,bezahlt:true}).status'),'unbekannt');
+ }
+});
+
+test('older year promise cannot release a journal after newer year confirmation',async()=>{
+ const {run}=startupFixture(true);
+ run(`const oldYear=ladeJahr(2026);const oldRead=pending.init;const journal=zahlungenLaden(oldYear);
+  pending.paymentOverview.resolve(overviewResponse);
+  const newer=ladeJahr(2026);pending.init.resolve(yearResponse)`);
+ await run('newer');run('oldRead.resolve(yearResponse)');
+ assert.equal(await run('journal'),false);
+ assert.equal(run('state.paymentLadezustand'),'fehler');
+ assert.equal(run('kalenderZahlung({...entry,bezahlt:true}).status'),'unbekannt');
+});
+
+test('year refresh masks existing colors and confirmation cannot bypass failed year',async()=>{
+ const {run}=startupFixture(true);
+ run(`state.paymentLadezustand='bereit';const year=ladeJahr(2026)`);
+ assert.equal(run('kalenderZahlung({...entry,bezahlt:true}).status'),'laden');
+ run('pending.init.reject(Error("year failure"))');await new Promise(setImmediate);
+ run('pending.init.reject(Error("year retry failure"))');assert.equal(await run('year'),null);
+ run('bestaetigteZahlungAnzeigen(payment)');
+ assert.equal(run('kalenderZahlung({...entry,bezahlt:true}).status'),'unbekannt');
 });
 
 test('journal waiting for year data cannot overwrite a later confirmed payment',async()=>{
