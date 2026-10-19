@@ -91,7 +91,9 @@ async function init(){
 
   if(pruefeKonfiguration()){
     if(!cacheDa)$("weekBox").textContent="Daten werden geladen …";
-    ladeJahr(jahr,cacheDa).then(()=>zahlungenLaden());
+    // Beide Leseabfragen sofort starten; Journal erst mit den Jahresdaten anzeigen.
+    const jahresdaten=ladeJahr(jahr,cacheDa);
+    await zahlungenLaden(jahresdaten);
   }else{
     state.paymentLadezustand="fehler";renderKalender();
   }
@@ -992,7 +994,7 @@ function bestaetigteZahlungAnzeigen(payload){
  }
  renderZahlungen();
 }
-async function zahlungenLaden(){
+async function zahlungenLaden(jahresdaten=null){
  const seq=++zahlungsLadeSequenz;
  state.paymentLadezustand="laden";renderKalender();
  try{
@@ -1007,6 +1009,9 @@ async function zahlungenLaden(){
    if(versuch===2)throw Error("Zahlungsübersicht noch nicht aktuell; bestätigte Buchungen bleiben erhalten.");
    await schlafen(400);
   }
+  // Nur beim Start: schnelle Journalantwort nicht mit alten Cache-Jahresdaten mischen.
+  if(jahresdaten)await jahresdaten;
+  if(seq!==zahlungsLadeSequenz)return false;
   bestaetigteZahlungsIds.clear();
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
   state.paymentLadezustand="bereit";

@@ -19,6 +19,69 @@ function fixture(){
  const entry={datum:'2026-10-09',stunden:8,bezahlt:false};`);
  return {run,elements,context};
 }
+
+function startupFixture(cached=false){
+ const f=fixture();
+ f.context.cached=cached;
+ f.run(`state.paymentLadezustand='laden';state.paymentVersion=0;state.paymentPositionen=[];
+ stundenBerechnen=()=>{};renderLeerzustand=()=>{};renderFahrzielDropdown=()=>{};
+ renderFahrziele=()=>{};renderStundenlohn=()=>{};pruefeKonfiguration=()=>true;
+ ladeLokalenCache=()=>{if(cached){state.eintraege=[{...entry,bezahlt:true}];state.jahresEintraege=state.eintraege;}return cached};
+ schreiben=()=>{throw Error('Unexpected startup write')};
+ const calls=[],pending={};
+ jsonp=({action})=>{calls.push(action);if(!['init','paymentOverview'].includes(action))throw Error('Unexpected startup action');return new Promise((resolve,reject)=>{pending[action]={resolve,reject}})};
+ const yearResponse={ok:true,eintraegeJahr:[entry]};
+ const overviewResponse={ok:true,paymentVersion:1,positionen:[{datum:entry.datum,art:'stunden',id:'',gesamtCent:10000,bezahltCent:2500,offenCent:7500}],zahlungen:[]};`);
+ return f;
+}
+
+test('startup starts exactly two reads immediately and joins either completion order, with/without cache',async()=>{
+ for(const cached of [false,true])for(const first of ['init','paymentOverview']){
+  const {run}=startupFixture(cached);
+  run('const startup=init()');
+  assert.equal(run('JSON.stringify(calls)'),JSON.stringify(['init','paymentOverview']));
+  run(`pending['${first}'].resolve(${first==='init'?'yearResponse':'overviewResponse'})`);
+  await new Promise(setImmediate);
+  assert.equal(run('state.paymentLadezustand'),'laden');
+  assert.equal(run('kalenderZahlung(entry).status'),'laden');
+  const last=first==='init'?'paymentOverview':'init';
+  run(`pending['${last}'].resolve(${last==='init'?'yearResponse':'overviewResponse'})`);
+  await run('startup');
+  assert.equal(run('kalenderZahlung(state.eintraege[0]).status'),'teilbezahlt');
+  assert.equal(run('calls.length'),2);
+ }
+});
+
+test('startup overview failure remains unknown after later year success',async()=>{
+ const {run}=startupFixture(true);run('const startup=init();pending.paymentOverview.reject(Error("synthetic failure"))');
+ await new Promise(setImmediate);
+ assert.equal(run('kalenderZahlung(entry).status'),'unbekannt');
+ run('pending.init.resolve(yearResponse)');await new Promise(setImmediate);await run('startup');
+ assert.equal(run('kalenderZahlung(entry).status'),'unbekannt');
+ assert.equal(run('calls.length'),2);
+});
+
+test('year retries do not restart the concurrent journal read',async()=>{
+ const {run}=startupFixture(true);
+ run('const startup=init();pending.paymentOverview.resolve(overviewResponse);pending.init.reject(Error("synthetic init failure"))');
+ await new Promise(setImmediate);
+ assert.equal(run('JSON.stringify(calls)'),JSON.stringify(['init','paymentOverview','init']));
+ assert.equal(run('state.paymentLadezustand'),'laden');
+ run('pending.init.resolve(yearResponse)');await run('startup');
+ assert.equal(run('kalenderZahlung(entry).status'),'teilbezahlt');
+ assert.equal(run('calls.filter(x=>x==="paymentOverview").length'),1);
+});
+
+test('journal waiting for year data cannot overwrite a later confirmed payment',async()=>{
+ const {run}=fixture();
+ run(`let finishYear;const year=new Promise(resolve=>finishYear=resolve);
+ jsonp=async()=>({ok:true,paymentVersion:1,positionen:[],zahlungen:[]});const loading=zahlungenLaden(year)`);
+ await new Promise(setImmediate);
+ run('bestaetigteZahlungAnzeigen(payment);finishYear()');
+ assert.equal(await run('loading'),false);
+ assert.equal(run('kalenderZahlung(entry).status'),'teilbezahlt');
+ assert.equal(run('state.paymentJournal[0].id'), 'synthetic-payment');
+});
 test('dropdown formats display date and preserves ISO identity',()=>{
  const {run,elements}=fixture();run('renderZahlungsAuswahl()');
  const option=elements.get('zahlungManuellNeu').children[1];
