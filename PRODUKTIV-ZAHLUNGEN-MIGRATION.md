@@ -1,114 +1,106 @@
-# Entwurf: Zahlungsfunktion übernehmen, Zahlungsstände neu beginnen
+# Zahlungsneustart: Vorbereitung und geprüfter Kopientest
 
-Stand 19.10.2026. **Nicht zur Live-Ausführung oder zum Merge freigegeben.**
-Ziel: vollständige Zahlungsoberfläche aus `jane-zahlungen-test`, aber keinerlei bisherige
-Zahlungen, Teilzahlungen, Bezahlt-Markierungen oder Journal-/Testbuchungen übernehmen.
-Arbeitszeiten und Fahrten aller Jahre bleiben unverändert.
+Stand 19.10.2026. **Entwurf, kein produktives Deployment oder Merge.**
 
-## Geprüfte Quellen und Grenze der Prüfung
+## Ziel und Umfang
 
-- Ausgangspunkt `main`: `a26c7b424285b6b50a4200b188c8d51a8b56715a`.
-- Aktuelle Zahlungsoberfläche: `jane-zahlungen-test/app.js` und `index.html` aus diesem Stand.
-- Produktion und Test verwenden unterschiedliche Apps-Script-Web-App-URLs. Die produktive
-  `config.js` wird beibehalten; Test-URL oder Testdaten werden nicht kopiert.
-- `main` enthält keinen Backend-Quellcode. Im Zweig
-  `codex/jane-dated-payments-20261013` liegen `backend/Code.gs` und `Payments.gs`.
-  Dieser Entwurf besitzt sechs Journalspalten, datierte Teilzahlungen, Legacy-Flags,
-  ScriptLock und Schreibbestätigungen, aber keine `reversePayment`-Implementierung.
-- Die aktuelle Oberfläche verwendet `recordPayment`, `reversePayment`, `writeStatus`,
-  `paymentOverview`, `stornoVon` und negative Gegenbuchungen. Deshalb kann der ältere
-  Backend-Entwurf **nicht ungeprüft als aktuelles Backend übernommen werden**.
-- Lokale frühere Lieferungen wurden ebenfalls geprüft: `Jane-Apps-Script.gs` vom
-  13.10.2026 entspricht der früheren Journalentwicklung; der produktive Datumsfix
-  `Jane_PRODUKTIV_Datumsvalidierung_FIX.gs` enthält die alte Funktion
-  `janeVerguetungenZuruecksetzen_EINMALIG`. Diese löscht zusätzlich Vergütungssätze und
-  Sonderleistungen und darf für diese Migration nicht verwendet werden.
-- Die früheren Jane-Chats bestätigen, dass spätere Frontend-Arbeiten das Backend
-  unverändert ließen; ein Abgleich mit dem tatsächlich bereitgestellten Quellstand
-  ist damit weiterhin erforderlich. Deployment-ID ist keine Script-Projekt-ID.
-- Keine produktiven Tabellen gelesen oder verändert; kein Live-Backup erstellt.
-  Die Existenz oder Vollständigkeit produktiver Daten wurde hier nicht live geprüft.
+Die produktive Jane erhält die vollständige Zahlungsoberfläche aus
+`jane-zahlungen-test`, beginnt aber ohne bisherige Zahlungen, Teilzahlungen,
+Bezahlt-Markierungen oder Testjournal. Alle Arbeitszeiten und Fahrten aller Jahre
+bleiben erhalten. Vergütungssätze, Sonderleistungswerte und Fahrtpauschalen sind
+Leistungswerte und bleiben ebenfalls erhalten; null bezahlt bedeutet nicht null offen.
 
-## Zahlungsfelder: explizite Grenze
+Das Frontend im Repository-Stamm übernimmt den getesteten Zahlungsstand.
+Die produktive `config.js` und Testseite bleiben unverändert. Ein eigener
+Jahrescache-Namensraum verhindert, dass alte Zahlungsfelder aus dem bisherigen
+Cache eingelesen werden; lokale Sondervorlagen werden nicht gelöscht.
+HTML und Service Worker verwenden dieselbe neue Skriptversion.
 
-| Speicher | Zurücksetzen | Erhalten |
+`backend/Code.gs` enthält den vollständig gelieferten produktiven Editorstand mit
+ergänztem Storno und serverseitiger Sperre alter Bezahlt-Aktionen. Details zu
+Gegenbuchungen, Idempotenz, Journalformat und noch offenen Cloudtests stehen in
+`backend/README.md`. Die unveränderliche tatsächlich bereitgestellte Version ist
+noch nicht mit diesem Editorstand abgeglichen.
+
+## Erhaltungsgrenze
+
+| Speicher | Zurücksetzen | Unverändert erhalten |
 | --- | --- | --- |
-| Arbeitszeiten | M `Bezahlt` → false; Q `Stunden_Fixbetrag` → leer; R `Km_Bezahlt` → false; S `Km_Fixbetrag` → leer | A–L, N–O, T–U vollständig: IDs, Datum, Dienste, Stunden, Abwesenheit, Notiz, Ziele, km, Zeitstempel, Abrechnungsmodus, vereinbarte Fahrtpauschale |
-| Arbeitszeiten P `Sonderleistungen` | ausschließlich `bezahlt` → false, `fixbetrag` → null | Einträge, IDs, Namen und `betrag` als Leistungswert |
-| Fahrten | G `Bezahlt` → false, H `Fixbetrag` → leer | A–F unverändert, insbesondere ID, Datum, Ziel und Kilometer |
-| Zahlungen | sämtliche Journalzeilen einschließlich Testzahlungen, Zuordnungen, Notizen und Gegenbuchungen leeren, nach vollständigem Backup | geprüfte Struktur/Kopfzeile |
-| Sonstige Speicher | weitere Zahlungs-/Stornoblätter, Properties, Cache und Wiederholschlüssel erst nach Quellprüfung gezielt behandeln | Vergütungen, Vorlagen, Einstellungen und unbekannte Daten nicht pauschal löschen |
+| Arbeitszeiten | M Bezahlt → false, Q Stunden_Fixbetrag → leer, R Km_Bezahlt → false, S Km_Fixbetrag → leer | IDs, Datum, Dienste, Stunden, Abwesenheit, Notiz, Ziele, km, Zeitstempel, Abrechnungsmodus, Fahrtpauschale |
+| Sonderleistungen in P | nur bezahlt → false und fixbetrag → null | Einträge, IDs, Namen, betrag |
+| Fahrten | G Bezahlt → false, H Fixbetrag → leer | A–F vollständig, insbesondere ID, Datum, Ziel, Kilometer |
+| Zahlungen | alle Datenzeilen inklusive Stornos, Zuordnungen und Testbuchungen leeren | geprüfte Kopfzeile |
+| Andere Blätter | keine pauschalen Löschungen | Sätze, Ziele, Einstellungen, leeres Tabellenblatt1 |
 
-Zahlungsbeträge sind von Leistungswerten zu unterscheiden: Stundenlohn, km-Satz,
-Sonderleistungsbetrag und vereinbarte Fahrtpauschale sind keine bereits geleisteten
-Zahlungen. Sie bleiben erhalten, damit offene Forderungen korrekt berechenbar bleiben.
-Null bezahlte Euro bedeutet deshalb nicht null offene Euro.
+Der frühere Reset `janeVerguetungenZuruecksetzen_EINMALIG` aus dem lokalen
+Datumsfix entfernt zusätzliche Leistungswerte und darf hier nicht verwendet werden.
+Auch Setup darf nicht aufgerufen werden: Es kann Fahrten importieren und Altfelder
+automatisch berechnen.
 
-## Vorbereitete Änderung
+## Bereits ausgeführte Prüfung auf getrennten Kopien
 
-Die Dateien im Repository-Stamm übernehmen die aktuelle Zahlungsoberfläche.
-Die produktive URL bleibt erhalten. Ein eigener Jahrescache-Namensraum verhindert
-das Einlesen alter Zahlungsfelder aus dem bisherigen lokalen Cache; bestehende
-Browserdaten und Sondervorlagen werden nicht gelöscht. HTML und Service Worker
-verwenden dieselbe neue Skriptversion. Die Testseite bleibt unverändert.
+Eine vollständige Google-Tabellenkopie wurde als unveränderte Sicherung angelegt,
+eine weitere Kopie daraus als Produktionsprüfkopie. Zusätzlich wurde die bestehende
+Zahlungs-Testtabelle kopiert. Nur die beiden Prüfkopien wurden nach ausdrücklicher
+Freigabe zurückgesetzt; Originale und Sicherung blieben unverändert.
+
+Vorher-/Nachher-Vergleich über alle Blätter und gemeldeten Blattgrenzen:
+eingegebene Werte/Formeln, Formate, Validierungen, Notizen und Textformatläufe
+entsprechen exakt dem vorab geprüften Kandidaten. Alle übrigen Daten bleiben erhalten.
+Die Produktionsprüfkopie behält sieben Arbeitszeiteinträge mit 35,25 Stunden und
+fünf Fahrten mit 53,8 km. Beide Journalblätter sind leer. In der Zahlungs-Testkopie
+wurden auch vier bestehende Journalzeilen einschließlich Gegenbuchung geleert.
+Unterschiedliche Eintragszahlen zwischen Produktion und Test wurden nicht angeglichen.
+
+Private Tabellen-IDs, Datenexporte und Backups werden nicht in dieses öffentliche
+Repository aufgenommen. Der private lokale Prüfbericht enthält die Zuordnung.
+
+## Offlineplaner
 
 `tools/payment-reset-plan.cjs` erzeugt ausschließlich im Arbeitsspeicher einen
-Kandidaten aus einem vollständigen Rohdaten-Snapshot. Keine Dateioperationen,
-Google-Zugriffe, Rücksetz-Endpunkte oder Live-Ausführung sind enthalten.
-Eingabeformat: `{format:'jane-sheet-snapshot-v1', spreadsheetId, sheets:{Name:{headers,rows}}}`.
-Die bekannten Arbeitszeiten-/Fahrtenspalten werden exakt geprüft. Unbekannte
-Blätter, neue Journalspalten und unbekannte Sonderleistungsfelder führen zum Abbruch.
-Der Planer ist derzeit nur für das **historisch belegte Schema** geeignet;
-das aktuelle Stornoschema muss zuerst ergänzt und separat getestet werden.
-SHA-256 vor/nach Ausschluss der erlaubten Zahlungsfelder prüft alle übrigen
-Snapshot-Inhalte einschließlich Reihenfolge und Zeilenzahl. Das ersetzt keinen
-vollständigen Sheet-Backupvergleich mit Formeln, Formaten und Datenvalidierungen.
+Kandidaten aus `{format:'jane-sheet-snapshot-v1',spreadsheetId,sheets:{Name:{headers,rows}}}`.
+Kein Netzwerk, keine Dateioperationen, kein Live-Reset. Bekannte Kopfzeilen werden
+exakt geprüft. Das tatsächlich vorgefundene `Tabellenblatt1` wird nur akzeptiert,
+wenn sämtliche exportierten Kopf-/Datenzellen leer sind, und unverändert erhalten.
+Andere unbekannte Blätter, zusätzliche Journalspalten oder unbekannte
+Sonderleistungsfelder führen zum Abbruch. SHA-256 prüft den Erhalt aller außerhalb
+der Zahlungsfelder liegenden Snapshot-Inhalte inklusive Reihenfolge und Zeilenzahl.
 
-## Verbindlicher Ablauf vor einer Freigabe
+Der angepasste Planer wurde gegen den privaten Rohdatenexport der Produktionsprüfkopie
+geprüft und liefert dieselben Daten wie die tatsächlich zurückgesetzte Kopie
+(das separat ergänzte leere Journal ist dabei eine Blattinitialisierung).
+Die vollständige Cloud-Zellprüfung umfasst zusätzlich die Formate und Validierungen;
+ein einfacher Rohwert-Snapshot allein ersetzt diese nicht.
 
-1. Tatsächliche Apps-Script-Projekte, Quellstände und verknüpfte Spreadsheet-IDs
-   für Produktion und Test eindeutig zuordnen. Alle Dateien, Journal-/Stornostrukturen,
-   Properties und Trigger prüfen. Bestehende alte Zahlungsaktionen serverseitig
-   sperren; nur die Frontendsperre genügt bei noch geöffneten alten Clients nicht.
-2. Private vollständige Kopie der produktiven Tabelle inklusive aller Jahre,
-   versteckter Blätter, Formeln, Formate und Validierungen anlegen. Backend-Dateien,
-   Properties, Trigger, Version und Deployment-Zuordnung separat sichern. Backup-ID,
-   Zeitpunkt, Tabellenköpfe, Zeilenzahlen und Prüfsummen protokollieren und die Kopie
-   wieder öffnen. Keine personenbezogenen Daten oder Backups in dieses öffentliche Repo.
-3. Rohdatenexport aller Blätter aus der gesicherten Kopie erstellen; Kopfzeilen und
-   sämtliche alten Zahlungsfelder prüfen. Planer an das belegte aktuelle Schema
-   anpassen; geplante Zelländerungen mit Zeilenzahlen und Invarianten ausgeben.
-   Bei unbekanntem Feld, fehlerhaftem JSON oder Formel in einem Zahlungsfeld abbrechen.
-4. Ausschließlich auf einer weiteren Kopie migrieren. Keine Setup-Funktion aufrufen:
-   sie kann Fahrten importieren und Altfelder automatisch neu berechnen.
-   Journal und Zahlungsflags aller Jahre zurücksetzen; keine Leistungszeilen löschen.
-   Arbeitszeiten, Fahrten, Vergütungssätze und Sonderleistungen vollständig vergleichen,
-   zusätzlich Stunden/km pro Jahr und pro ID. Journal leer, Bezahltbeträge null,
-   sämtliche Positionen offen; Neuinitialisierung darf keine Zahlungen wiederherstellen.
-5. Aktuelles Backend mit der Kopie und isoliertem Frontend prüfen: leeres Journal,
-   Teil-/Vollzahlung, Sammelüberweisung, Storno, Jahreswechsel, Wiederholschutz,
-   alte Clients, Netzfehler, Cache und Schreibbestätigung. Danach Testbuchungen nur
-   auf der Kopie erneut entfernen und wieder den Nullzustand prüfen.
-6. Konkrete Prüfergebnisse und Wiederherstellungsprobe zur ausdrücklichen Freigabe
-   vorlegen. Erst danach Wartungsfenster mit Schreibsperre für alle Clients und
-   Trigger, frisches Backup und erneutem Quellen-/Datenabgleich. Migration muss
-   denselben Schreiblock wie alle Backend-Mutationen verwenden. Kein atomarer
-   Mehrblatt-Commit in Sheets: Unterbrechungen müssen erkannt und gesichert behandelt werden.
-7. Genehmigte Migration unter Schreibsperre ausführen, vollständige Invarianten
-   vergleichen, Backend und Frontend koordiniert bereitstellen. Alte Zahlungs-/Ack-
-   Wiederholschlüssel nach geprüfter Semantik entwerten, damit alte Anfragen keine
-   Zahlungen neu anlegen. Erst nach erfolgreicher Prüfung Schreiben wieder zulassen.
+## Noch erforderlich vor Produktionsfreigabe
 
-Rollback: Unter Schreibsperre aus der verifizierten vollständigen Sicherung wiederherstellen
-und Backend/Frontend passend zurücksetzen; nicht eigenmächtig die Sheet-ID wechseln.
-Nach neuen echten Buchungen niemals blind ein älteres Backup überschreiben: diese
-zunächst sichern und abgleichen. Bei fehlgeschlagener Prüfung geschlossen bleiben.
+1. Tatsächlich bereitgestellte Version, Script-Projekt und produktive Tabellenbindung
+   eindeutig abgleichen. Alle Projektdateien, Properties, Trigger und Versionen sichern.
+2. Backend in einem separaten Testprojekt mit einer separaten Tabellenkopie prüfen;
+   niemals eine bestehende produktive Bereitstellung dafür ändern. Cloud-/Browsertests
+   für leeren Start, Teil-/Voll-/Sammelzahlung, Storno, Retry, alte Clients und Netzfehler.
+3. Wiederherstellung aus vollständiger Sicherung auf einer Kopie nachweisen.
+4. Konkrete Prüfergebnisse zur ausdrücklichen Produktionsfreigabe vorlegen.
+5. Erst danach Wartungsfenster, Schreibsperre für alle Clients/Trigger, frisches
+   Backup und Quellen-/Datenabgleich. Produktionsreset unter demselben Schreiblock
+   wie die Backend-Mutationen durchführen; Sheets bietet keinen allgemeinen
+   atomaren Mehrblatt-Commit über getrennte Apps-Script-Schreibaufrufe.
+6. Replay-/Ack-Zustände anhand des tatsächlichen Deployments prüfen und gezielt
+   entwerten. Backend und Frontend koordiniert bereitstellen, vollständige Invarianten
+   vergleichen und erst dann Schreiben wieder freigeben.
 
-## Prüfung dieses Entwurfs
+Rollback nur unter Schreibsperre aus verifizierter Sicherung und mit passenden
+Backend-/Frontendversionen. Nach neuen echten Buchungen niemals blind eine ältere
+Sicherung darüberkopieren; neue Buchungen zuerst sichern und abgleichen.
 
-`node --test payment-regression.test.cjs tools/payment-reset-plan.test.cjs`
-prüft die übertragene Oberfläche mit synthetischen DOM-/Netzwerk-Doubles sowie
-Erhalt der Leistungen, alle Jahre, fehlerhafte JSON-Daten, unbekannte Schemata und
-wiederholte Planung. Ergänzend JS-Syntax und `git diff --check`.
-Browser-, aktueller Backend-, Tabellenkopie- und Wiederherstellungstest stehen aus.
-**Keine Löschung, Buchung, Backend-Bereitstellung oder Merge in diesem Auftrag ausgeführt.**
+## Lokale Prüfungen
+
+`node --test backend-payments.test.cjs payment-regression.test.cjs tools/payment-reset-plan.test.cjs`
+
+Backend-/Frontend-Integration startet mit leerem Journal, bucht eine Teilzahlung
+und bestätigt einen Storno über die echten vorbereiteten Backend-Funktionen mit
+lokalen Sheets-/DOM-Doubles. Zusätzlich lokaler Backend-Wiederanlauf an einer
+Nachbildung der ausgelesenen Produktionsprüfkopie: alle Positionen offen und
+Leistungsdaten unverändert, keinerlei Schreibzugriffe. Das ersetzt keinen Cloudtest.
+
+**Kein produktives Backend verändert, kein Deployment, kein Merge.**

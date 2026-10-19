@@ -48,7 +48,9 @@ function planReset(snapshot){
  check(snapshot.sheets.Fahrten,FR,'Fahrten');
  if(snapshot.sheets.Zahlungen)check(snapshot.sheets.Zahlungen,JOURNAL,'Zahlungen');
  // Unknown sheets may contain payment/reversal data: never silently leave them behind.
- const known=['Arbeitszeiten','Fahrten','Fahrziele','Einstellungen','Stundenlohn','Kilometerpauschale','Zahlungen'];
+ const blank=snapshot.sheets.Tabellenblatt1;
+ if(blank&&(!Array.isArray(blank.headers)||!Array.isArray(blank.rows)||[...blank.headers,...blank.rows.flat()].some(v=>v!==''&&v!==null)))throw Error('Tabellenblatt1 ist nicht leer');
+ const known=['Arbeitszeiten','Fahrten','Fahrziele','Einstellungen','Stundenlohn','Kilometerpauschale','Zahlungen','Tabellenblatt1'];
  if(Object.keys(snapshot.sheets).some(n=>!known.includes(n)))throw Error('Ungeprüftes zusätzliches Blatt');
  const candidate=JSON.parse(JSON.stringify(snapshot));
  for(const row of candidate.sheets.Arbeitszeiten.rows){row[12]=false;row[16]='';row[17]=false;row[18]='';row[15]=resetSonder(row[15]);}

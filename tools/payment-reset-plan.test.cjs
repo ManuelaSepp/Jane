@@ -38,3 +38,11 @@ test('incomplete snapshots abort before proposing changes',()=>{
  for(const key of ['spreadsheetId','format']){const s=fixture();delete s[key];assert.throws(()=>planReset(s));}
  const s=fixture();delete s.sheets.Stundenlohn;assert.throws(()=>planReset(s));
 });
+
+test('observed empty Tabellenblatt1 is preserved; populated or malformed extra sheet aborts',()=>{
+ const s=fixture();s.sheets.Tabellenblatt1={headers:[],rows:[]};
+ assert.deepEqual(planReset(s).candidate.sheets.Tabellenblatt1,s.sheets.Tabellenblatt1);
+ for(const tab of [{headers:['data'],rows:[]},{headers:[],rows:[[1]]},{headers:[],rows:null}]){
+  s.sheets.Tabellenblatt1=tab;assert.throws(()=>planReset(s));
+ }
+});
