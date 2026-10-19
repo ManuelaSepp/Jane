@@ -165,3 +165,51 @@ test('frontend loads empty backend, books partial payment and confirms reversal 
  assert.equal(run('state.paymentPositionen.every(p=>p.bezahltCent===0)'),true);
  assert.equal(run('offeneStornierung'),null);
 });
+
+function releaseFixture(){
+ const f=fixture(),ss=f.ctx.SpreadsheetApp.getActive();ss.getId=()=> 'synthetic-sheet';
+ f.ctx.SpreadsheetApp.getActive=()=>ss;
+ f.ctx.Utilities.DigestAlgorithm={SHA_256:'SHA_256'};
+ f.ctx.Utilities.computeDigest=(_,value)=>Array.from(require('node:crypto').createHash('sha256').update(value).digest());
+ f.ctx.Logger={log(){}};return {...f,ss};
+}
+
+test('editor write pause blocks all POST actions, records failure Ack and keeps reads available',()=>{
+ const f=releaseFixture(),before=JSON.stringify(f.sheets);f.ctx.janeSchreibpauseAktivieren();
+ for(const action of ['save','update','delete','recordPayment','reversePayment','saveStartAdresse','saveFahrziel','deleteFahrziel','saveStundenlohn','saveKilometersatz','setBezahlt','setLeistungBezahlt']){
+  const result=f.post(action,{});assert.equal(result.ok,false);assert.match(result.message,/vorübergehend gesperrt/);
+ }
+ assert.equal(JSON.stringify(f.sheets),before);assert.equal(f.overview().ok,true);
+ const ack=f.ctx.PropertiesService.getScriptProperties().getProperty('jane_ack_request_123456789');assert.equal(JSON.parse(ack).ok,false);
+ const status=f.ctx.janeReleaseStatus_();assert.equal(status.writePaused,true);
+ assert.equal(status.bindingSha256,require('node:crypto').createHash('sha256').update('synthetic-sheet').digest('hex'));
+ assert.equal(f.locks.acquired,f.locks.released);
+});
+
+test('unpause requires matching table binding and a completely cleared payment state',()=>{
+ for(const dirty of [
+  f=>{f.sheets.Arbeitszeiten.rows[1][12]=true;},
+  f=>{f.sheets.Arbeitszeiten.rows[1][16]=100;},
+  f=>{f.sheets.Arbeitszeiten.rows[1][18]=5;},
+  f=>{f.sheets.Fahrten.rows[1][7]=5;},
+  f=>{f.sheets.Arbeitszeiten.rows[1][15]=JSON.stringify([{id:'s1',name:'Extra',betrag:1,bezahlt:false,fixbetrag:1}]);},
+  f=>{f.ss.getId=()=> 'wrong-sheet';},
+  f=>{f.ctx.recordPayment_(f.payload());}
+ ]){
+  const f=releaseFixture();f.ctx.janeSchreibpauseAktivieren();dirty(f);
+  assert.throws(()=>f.ctx.janeSchreibpauseBeenden());assert.equal(f.ctx.janeReleaseStatus_().writePaused,true);
+ }
+});
+
+test('clean reset can be unpaused without changing any table data',()=>{
+ const f=releaseFixture();assert.throws(()=>f.ctx.janeSchreibpauseBeenden());
+ const before=JSON.stringify(f.sheets);f.ctx.janeSchreibpauseAktivieren();f.ctx.janeSchreibpauseBeenden();
+ assert.equal(f.ctx.janeReleaseStatus_().writePaused,false);assert.equal(JSON.stringify(f.sheets),before);
+ assert.equal(f.post('recordPayment',f.payload()).ok,true);
+});
+
+test('releaseStatus read endpoint identifies the prepared code and exposes no raw spreadsheet ID',()=>{
+ const f=releaseFixture();const text=f.ctx.doGet({parameter:{action:'releaseStatus',callback:'check'}}).text;
+ const status=JSON.parse(text.slice(6,-2));assert.equal(status.backendRevision,'jane-zahlungsneustart-20261019-r3');
+ assert.equal(status.writePaused,false);assert.equal(text.includes('synthetic-sheet'),false);
+});

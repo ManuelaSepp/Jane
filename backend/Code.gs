@@ -85,7 +85,9 @@ function doGet(e) {
   const callback = String((e && e.parameter && e.parameter.callback) || 'callback');
   let result;
   try {
-    if (action === 'paymentOverview') {
+    if (action === 'releaseStatus') {
+      result = janeReleaseStatus_();
+    } else if (action === 'paymentOverview') {
       result = paymentOverview_();
     } else if (action === 'init') {
       result = init_(Number(e.parameter.jahr) || new Date().getFullYear());
@@ -114,6 +116,7 @@ function doPost(e) {
   let locked=false;
   try {
     lock.waitLock(30000);locked=true;
+    if (PropertiesService.getScriptProperties().getProperty('JANE_WRITE_PAUSE') === 'true') throw new Error('Jane wird gerade umgestellt. Speichern ist vorübergehend gesperrt.');
     const action = String((e && e.parameter && e.parameter.action) || '');
     const payload = JSON.parse(String((e && e.parameter && e.parameter.payload) || '{}'));
     if (action === 'setBezahlt' || action === 'setLeistungBezahlt') throw new Error('Alter Zahlungsstatus deaktiviert. Bitte das Zahlungsjournal verwenden.');
@@ -653,6 +656,39 @@ function mapsBerechtigungTest() {
     .setMode(Maps.DirectionFinder.Mode.DRIVING)
     .getDirections();
   Logger.log(result && result.routes ? 'Maps OK' : 'Keine Route');
+}
+
+// Administrative editor functions; not reachable through doGet/doPost actions.
+function janeBinding_(){
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,SpreadsheetApp.getActive().getId())
+    .map(b=>('0'+((b+256)%256).toString(16)).slice(-2)).join('');
+}
+function janeReleaseStatus_(){
+  return {ok:true,backendRevision:'jane-zahlungsneustart-20261019-r3',paymentVersion:1,
+    writePaused:PropertiesService.getScriptProperties().getProperty('JANE_WRITE_PAUSE')==='true',
+    bindingSha256:janeBinding_()};
+}
+function janeSchreibpauseAktivieren(){
+  const lock=LockService.getScriptLock();lock.waitLock(30000);
+  try{
+    const props=PropertiesService.getScriptProperties();
+    props.setProperty('JANE_WRITE_PAUSE','true');
+    props.setProperty('JANE_WRITE_PAUSE_BINDING',janeBinding_());
+    Logger.log('Schreibpause gesetzt. Sie wirkt in Bereitstellungen, die diesen Code ausführen. Keine Tabellendaten verändert.');
+  }finally{lock.releaseLock();}
+}
+function janeSchreibpauseBeenden(){
+  const lock=LockService.getScriptLock();lock.waitLock(30000);
+  try{
+    const props=PropertiesService.getScriptProperties();
+    if(props.getProperty('JANE_WRITE_PAUSE')!=='true'||props.getProperty('JANE_WRITE_PAUSE_BINDING')!==janeBinding_())throw new Error('Keine passende Schreibpause für diese Tabelle vorhanden.');
+    const overview=paymentOverview_();
+    const ss=SpreadsheetApp.getActive();
+    const entries=readEntries_(ss.getSheetByName(SHEET_ARBEITSZEITEN),ss.getSheetByName(SHEET_FAHRTEN),null);
+    if(overview.zahlungen.length||overview.positionen.some(p=>p.altBezahlt||p.bezahltCent!==0)||entries.some(e=>e.bezahlt||e.kmBezahlt||e.stundenFix!=null||e.kmFix!=null||e.fahrten.some(f=>f.bezahlt||f.fixbetrag!=null)||e.sonderleistungen.some(x=>x.bezahlt||x.fixbetrag!=null)))throw new Error('Zahlungsneustart noch nicht leer. Schreibpause bleibt aktiv.');
+    props.setProperty('JANE_WRITE_PAUSE','false');
+    Logger.log('Zahlungsneustart geprüft: Journal und alte Zahlungsfelder leer. Schreiben freigegeben.');
+  }finally{lock.releaseLock();}
 }
 
 // Append-only journal. Existing rows, paid flags, rates and templates are untouched.
