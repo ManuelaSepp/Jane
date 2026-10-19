@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const state={
   eintraege:[],fahrziele:[],kalenderDatum:new Date(),ausgewaehlt:null,originalDatum:null,
   cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
-  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[],paymentVersion:0,paymentPositionen:[],paymentJournal:[],paymentEntwurf:[]
+  stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[],paymentVersion:0,paymentPositionen:[],paymentJournal:[],paymentEntwurf:[]
 };
 let jsonpSequenz=0,ladeSequenz=0;
 
@@ -32,9 +32,6 @@ $("zielSpeichern").onclick=fahrzielSpeichern;
 $("exportExcel").onclick=exportExcel;
 $("exportPdf").onclick=exportPdf;
 $("zahlungBearbeiten").onclick=zahlungBearbeitenStart;
-$("zahlungBezahlt").onclick=()=>zahlungsstatusSetzen(true);
-$("zahlungOffen").onclick=()=>zahlungsstatusSetzen(false);
-$("zahlungAbbrechen").onclick=zahlungBearbeitenEnde;
 $("sonderVorlageSpeichern").onclick=sonderVorlagenSpeichern;renderSonderVorlagen();$("lohnSpeichern").onclick=stundenlohnSpeichern;$("kmSatzSpeichern").onclick=kilometersatzSpeichern;
 $("lohnMonat").onchange=renderStundenlohn;
 
@@ -228,7 +225,7 @@ function renderAktuelleFahrten(){
     const info=document.createElement("div");
     info.innerHTML=`<strong>${htmlSicher(f.fahrziel)}</strong><small>Hin & Rück: ${format(f.kilometer)} km</small>`;
     const b=document.createElement("button");b.type="button";b.className="danger";b.textContent="Entfernen";b.disabled=!!f.bezahlt||!!state.jahresEintraege.find(x=>x.datum===state.originalDatum)?.kmBezahlt;b.onclick=()=>fahrtEntfernen(i);
-    d.append(info,b);if(state.originalDatum&&f.id&&$("kmModus").value==="km"){const pay=document.createElement("button");pay.type="button";pay.textContent=f.bezahlt?"✓ Bezahlt":"Fahrt bezahlt";pay.disabled=!!f.bezahlt;pay.onclick=()=>leistungBezahlt("fahrt",f.id);d.append(pay);}g.appendChild(d);
+    d.append(info,b);if(state.originalDatum&&f.id&&$("kmModus").value==="km"){const pay=document.createElement("button");pay.type="button";pay.textContent=f.bezahlt?"✓ Bezahlt":"Im Zahlungsjournal zuordnen";pay.disabled=!!f.bezahlt;pay.onclick=()=>leistungBezahlt("fahrt",f.id);d.append(pay);}g.appendChild(d);
   });
   const km=state.aktuelleFahrten.reduce((s,f)=>s+Number(f.kilometer||0),0);
   $("fahrtGesamtKm").textContent=format(km)+" km";
@@ -272,7 +269,7 @@ function sonderleistungHinzufuegen(x={}){
  n.addEventListener("change",()=>{const v=sonderVorlagenLesen().find(v=>v.name===n.value.trim());if(v)auswahl.value=v.name;});
  if(sonderVorlagenLesen().some(v=>v.name===n.value))auswahl.value=n.value;
  const b=document.createElement("input");b.className="sonder-betrag";b.placeholder="Pauschale €";b.inputMode="decimal";b.value=x.betrag===undefined?"":String(x.betrag).replace(".",",");b.style.flex="1";b.disabled=!!x.bezahlt;
- const del=document.createElement("button");del.type="button";del.textContent="×";del.onclick=()=>r.remove();del.disabled=!!x.bezahlt;r.append(auswahl,n,b,del);if(state.originalDatum&&x.id){const pay=document.createElement("button");pay.type="button";pay.textContent=x.bezahlt?"✓ Bezahlt":"Als bezahlt";pay.disabled=!!x.bezahlt;pay.onclick=()=>leistungBezahlt("sonder",x.id);r.append(pay);}$("sonderListe").appendChild(r);
+ const del=document.createElement("button");del.type="button";del.textContent="×";del.onclick=()=>r.remove();del.disabled=!!x.bezahlt;r.append(auswahl,n,b,del);if(state.originalDatum&&x.id){const pay=document.createElement("button");pay.type="button";pay.textContent=x.bezahlt?"✓ Bezahlt":"Im Zahlungsjournal zuordnen";pay.disabled=!!x.bezahlt;pay.onclick=()=>leistungBezahlt("sonder",x.id);r.append(pay);}$("sonderListe").appendChild(r);
 }
 function sonderleistungenSetzen(items){$("sonderListe").replaceChildren();(Array.isArray(items)?items:[]).forEach(sonderleistungHinzufuegen);}
 function sonderSumme(e){return (Array.isArray(e.sonderleistungen)?e.sonderleistungen:[]).reduce((s,x)=>s+sonderBetragAktuell(x,e.datum),0);}
@@ -366,6 +363,8 @@ function renderAlles(){renderKalender();renderWoche();renderStatistik();renderMo
 function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 
 async function schreiben(action,payload){
+ // Auf dieser Journal-Testseite dürfen alte Vollbezahlt-Flags nie geschrieben werden.
+ if(action==="setLeistungBezahlt")throw Error("Bitte Zahlungen ausschließlich über das Zahlungsjournal zuordnen oder stornieren.");
  const requestId="jane_"+Date.now()+"_"+Math.random().toString(36).slice(2);
  const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now())});
  await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",body,cache:"no-store"});
@@ -557,9 +556,8 @@ function renderKalender(){
     b.className="day-cell "
       +(e?(e.abwesenheit?"status-abwesenheit":"status-arbeit"):"")
       +(i===iso(new Date())?" today":"")
-      +(!state.zahlungsModus&&i===state.ausgewaehlt?" selected":"")
-      +(zahlung&&zahlung.status!=="offen"?" status-"+zahlung.status:"")
-      +(state.zahlAuswahl.has(i)?" pay-selected":"");
+      +(i===state.ausgewaehlt?" selected":"")
+      +(zahlung&&zahlung.status!=="offen"?" status-"+zahlung.status:"");
     const label=e?(e.abwesenheit||format(e.stunden)+" h"+(Number(e.kilometer)>0?" · "+format(e.kilometer)+" km":"")):"";
     const bezahltBadge=zahlung?'<span class="paid-badge">'+(zahlung.status==="bezahlt"?"✓ bezahlt":zahlung.status)+'</span>'+(zahlung.status==="teilbezahlt"&&zahlung.anteil?'<span class="status-label">'+zahlung.anteil+'</span>':""):"";
     b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>${bezahltBadge}`;
@@ -572,12 +570,6 @@ function renderKalender(){
     }
     b.onclick=()=>{
       state.tooltipBlockDatum=i;tooltipAusblenden();b.blur();
-      if(state.zahlungsModus){
-        if(!istArbeit){zeige("Nur Arbeitstage können als bezahlt/offen markiert werden.","error");return}
-        if(state.zahlAuswahl.has(i))state.zahlAuswahl.delete(i);else state.zahlAuswahl.add(i);
-        renderKalender();renderZahlungsAuswahl();
-        return;
-      }
       state.ausgewaehlt=i;datum.value=i;e?eintragLaden(e):resetForm(false);datum.value=i;state.ausgewaehlt=i;renderKalender();renderWoche();
     };
     g.appendChild(b);
@@ -646,82 +638,11 @@ async function stundenlohnSpeichern(){
   zeige("Stundenlohn gespeichert. Offene Beträge neu berechnet.","success");
  }catch(e){zeige("Stundenlohn nicht gespeichert: "+e.message,"error");}
 }
+// Keine parallele Bearbeitung von Vollbezahlt-Flags neben Teilzahlungen.
 function zahlungBearbeitenStart(){
-  state.zahlungsModus=true;
-  state.zahlAuswahl.clear();
-  $("zahlungBearbeiten").classList.add("hidden");
-  $("zahlungAktionen").classList.remove("hidden");
-  renderZahlungsAuswahl();
-  renderKalender();
-}
-function zahlungBearbeitenEnde(){
-  state.zahlungsModus=false;
-  state.zahlAuswahl.clear();
-  $("zahlungAktionen").classList.add("hidden");
-  $("zahlungBearbeiten").classList.remove("hidden");
-  renderKalender();
-  zeige("","");
-}
-function zahlungsPositionen(){
- const result=[];
- for(const datum of [...state.zahlAuswahl].sort()){
-  const e=state.jahresEintraege.find(x=>x.datum===datum);
-  if(!e||e.abwesenheit)continue;
-  const add=(art,id,label,bezahlt)=>result.push({datum,art,id:id||"",bezahlt:bezahlt===true,label:datum.slice(8,10)+"."+datum.slice(5,7)+". – "+label});
-  if(Number(e.stunden||0)>0)add("stunden","","Arbeitsstunden ("+format(e.stunden)+" h)",e.bezahlt);
-  if(e.kmModus==="pauschal")add("km","","Fahrtkosten-Pauschale ("+euro(e.kmPauschal)+")",e.kmBezahlt);
-  else if(e.kmBezahlt)add("km","","Fahrtkosten des Tages ("+format(e.kilometer)+" km)",true);
-  else if(Array.isArray(e.fahrten)&&e.fahrten.length)e.fahrten.forEach(f=>add("fahrt",f.id,"Fahrt: "+(f.fahrziel||"ohne Ziel")+" ("+format(f.kilometer)+" km)",f.bezahlt));
-  else if(Number(e.kilometer||0)>0)add("km","","Fahrtkosten ("+format(e.kilometer)+" km)",e.kmBezahlt);
-  (e.sonderleistungen||[]).forEach(x=>add("sonder",x.id,"Sonderleistung: "+x.name+" ("+euro(sonderBetragAktuell(x,datum))+")",x.bezahlt));
- }
- return result;
-}
-function renderZahlungsAuswahl(){
- const n=state.zahlAuswahl.size,g=$("zahlungLeistungen");
- $("zahlungAuswahlText").textContent=n===1?"1 Arbeitstag ausgewählt":n+" Arbeitstage ausgewählt";
- g.replaceChildren();
- const positionen=zahlungsPositionen();
- if(!n)g.textContent="Wähle zuerst einen oder mehrere Tage im Kalender.";
- else if(!positionen.length)g.textContent="Keine Leistungen an diesen Tagen.";
- else{
-  const alle=document.createElement("label");alle.style.cssText="display:flex;gap:8px;align-items:center;margin-bottom:9px;font-weight:bold";
-  const check=document.createElement("input");check.type="checkbox";check.checked=false;check.id="zahlungAllePositionen";
-  alle.append(check,document.createTextNode("Alle Leistungen auswählen"));g.appendChild(alle);
-  positionen.forEach((p,i)=>{
-   const label=document.createElement("label");label.style.cssText="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #e5e7eb;font-weight:normal";
-   const c=document.createElement("input");c.type="checkbox";c.checked=false;c.className="zahlung-position";c.dataset.index=String(i);
-   label.append(c,document.createTextNode((p.bezahlt?"✓ Bezahlt – ":"○ Offen – ")+p.label));g.appendChild(label);
-   c.onchange=aktualisiereZahlungsButtons;
-  });
-  check.onchange=()=>{g.querySelectorAll(".zahlung-position").forEach(x=>x.checked=check.checked);aktualisiereZahlungsButtons();};
- }
- aktualisiereZahlungsButtons();
-}
-function aktualisiereZahlungsButtons(){
- const g=$("zahlungLeistungen"),positionen=zahlungsPositionen();
- const selected=[...g.querySelectorAll(".zahlung-position:checked")].map(c=>positionen[Number(c.dataset.index)]).filter(Boolean);
- $("zahlungBezahlt").disabled=!selected.some(p=>!p.bezahlt);
- $("zahlungOffen").disabled=!selected.some(p=>p.bezahlt);
- const all=[...g.querySelectorAll(".zahlung-position")],check=$("zahlungAllePositionen");
- if(check)check.checked=all.length>0&&all.every(c=>c.checked);
-}
-async function zahlungsstatusSetzen(bezahlt){
- const positionen=zahlungsPositionen();
- const selected=[...$("zahlungLeistungen").querySelectorAll(".zahlung-position:checked")].map(c=>positionen[Number(c.dataset.index)]).filter(p=>p&&p.bezahlt!==bezahlt);
- if(!selected.length)return zeige("Bitte passende Leistungen auswählen.","error");
- if(!bezahlt&&!confirm(selected.length+" bezahlte Leistung(en) wirklich wieder auf OFFEN setzen?"))return;
- $("zahlungBezahlt").disabled=true;$("zahlungOffen").disabled=true;
- let erfolg=0;
- try{
-  for(const p of selected){await schreiben("setLeistungBezahlt",{datum:p.datum,art:p.art,id:p.id,bezahlt});erfolg++;}
-  zahlungBearbeitenEnde();await ladeJahr(state.kalenderDatum.getFullYear(),true);
-  zeige(erfolg+(bezahlt?" Leistungen als bezahlt bestätigt.":" Leistungen wieder auf offen gesetzt."),"success");
- }catch(e){
-  await ladeJahr(state.kalenderDatum.getFullYear(),true);
-  renderZahlungsAuswahl();
-  zeige(erfolg+" von "+selected.length+" Leistungen gespeichert. Fehler: "+e.message,"error");
- }
+ const karte=$("zahlungenKarte");karte.open=true;
+ karte.scrollIntoView({behavior:"smooth",block:"start"});
+ $("zahlungBetragNeu").focus();
 }
 function tooltipFuerEintrag(e){
   const z=[ausIso(e.datum).toLocaleDateString("de-DE",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})];
@@ -777,21 +698,10 @@ function jahresWerte(jahr){
 }
 function renderEinzelstatus(e){
  const box=$("einzelStatus");box.replaceChildren();
- for(const [art,name,paid] of [["stunden","Arbeitsstunden",!!e.bezahlt],["km","Fahrtkosten",!!e.kmBezahlt]]){
-  const b=document.createElement("button");b.type="button";b.textContent=name+": "+(paid?"✓ bezahlt":"Als bezahlt markieren");b.disabled=paid;b.onclick=()=>leistungBezahlt(art);box.appendChild(b);
- }
+ const b=document.createElement("button");b.type="button";
+ b.textContent="Zahlungen im Zahlungsjournal zuordnen";b.onclick=zahlungBearbeitenStart;box.appendChild(b);
 }
-async function leistungBezahlt(art,id=""){
- if(!state.originalDatum)return;
- if(!confirm("Diese Leistung endgültig als bezahlt festschreiben?"))return;
- try{
-  await schreiben("setLeistungBezahlt",{datum:state.originalDatum,art,id,bezahlt:true});
-  zeige("Zahlungsstatus bestätigt.","success");
-  await ladeJahr(state.kalenderDatum.getFullYear(),true);
-  const e=state.jahresEintraege.find(x=>x.datum===state.originalDatum);
-  if(e)eintragLaden(e);
- }catch(err){zeige("Zahlung konnte nicht bestätigt werden: "+err.message,"error");}
-}
+function leistungBezahlt(){zahlungBearbeitenStart();}
 async function kilometersatzSpeichern(){
  const ab=$("kmSatzMonat").value,satz=Number($("kmSatzWert").value.replace(",","."));
  if(!/^\d{4}-\d{2}-\d{2}$/.test(ab)||!Number.isFinite(satz)||satz<0)return zeige("Ungültiger Kilometersatz.","error");
@@ -957,6 +867,12 @@ function zahlungsCents(text){
  const n=Number(norm),cent=Math.round(n*100);
  return Number.isSafeInteger(cent)&&cent>0?cent:null;
 }
+// ISO-Datumsanteil unverändert übernehmen: keine Zeitzonenverschiebung durch Date.
+function zahlungsDatumDeutsch(wert){
+ const text=String(wert??"");
+ const datum=text.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+ return datum?datum[3]+"."+datum[2]+"."+datum[1]:text;
+}
 function zahlungKennung(p){return JSON.stringify([p.datum,p.art,p.id||""])}
 async function zahlungenLaden(){
  try{
@@ -964,7 +880,7 @@ async function zahlungenLaden(){
   if(!r.ok||r.paymentVersion!==1)throw Error(r.message||"Zahlungsmodul nicht verfügbar");
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
   renderZahlungsHistorie();
-  renderZahlungsAuswahl();
+  renderJournalAuswahl();
   renderStatistik();renderMonatsGrid();renderKalender();
  }catch(e){state.paymentVersion=0;$("zahlungStatusNeu").textContent="Zahlungsverwaltung nicht verfügbar: "+e.message;$("zahlungBuchenNeu").disabled=true;}
 }
@@ -985,11 +901,11 @@ function renderZahlungsHistorie(){
   for(const p of entries){
    const d=document.createElement("div");d.style.cssText="border-top:1px solid #eee;padding:8px 0";
    const title=document.createElement("div");
-   title.textContent=String(p.datum||"").split("-").reverse().join(".")+" · "+euro(p.betrag)+" · "+(p.stornoVon?"Stornierung":"Zahlung")+(reversed.has(p.id)?" (storniert)":"");
+   title.textContent=zahlungsDatumDeutsch(p.datum)+" · "+euro(p.betrag)+" · "+(p.stornoVon?"Stornierung":"Zahlung")+(reversed.has(p.id)?" (storniert)":"");
    d.appendChild(title);
    for(const item of p.positionen||[]){
     const line=document.createElement("div");line.style.cssText="font-size:.9em;padding:2px 0 2px 12px";
-    line.textContent=String(item.datum||"").split("-").reverse().join(".")+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
+    line.textContent=zahlungsDatumDeutsch(item.datum)+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
     d.appendChild(line);
    }
    if(p.betrag>0&&!reversed.has(p.id)){
@@ -1004,7 +920,7 @@ function renderZahlungsHistorie(){
 let offeneStornierung=null;
 async function zahlungStornierenNeu(p){
  if(offeneStornierung||offeneZahlungsBuchung)return;
- if(!confirm("Zahlung vom "+p.datum+" über "+euro(p.betrag)+" vollständig stornieren? Die Zuordnungen werden wieder offen."))return;
+ if(!confirm("Zahlung vom "+zahlungsDatumDeutsch(p.datum)+" über "+euro(p.betrag)+" vollständig stornieren? Die Zuordnungen werden wieder offen."))return;
  offeneStornierung=p.id;
  try{
   await schreiben("reversePayment",{id:p.id,datum:iso(new Date())});
@@ -1057,14 +973,14 @@ function zahlungsVorschlag(cents){
  for(const p of candidates){if(rest<=0)break;const cent=Math.min(rest,p.offenCent);result.push({p,cent});rest-=cent;}
  return rest===0?result:[];
 }
-function renderZahlungsAuswahl(){
+function renderJournalAuswahl(){
  const select=$("zahlungManuellNeu");if(!select)return;
  select.replaceChildren();
  const first=document.createElement("option");first.value="";first.textContent="Bitte auswählen";select.appendChild(first);
  for(const p of zahlungsKandidaten()){
   const option=document.createElement("option");
   option.value=zahlungKennung(p);
-  option.textContent=p.datum+" · "+p.label+" · offen "+euro(p.offenCent/100);
+  option.textContent=zahlungsDatumDeutsch(p.datum)+" · "+p.label+" · offen "+euro(p.offenCent/100);
   select.appendChild(option);
  }
 }
@@ -1084,7 +1000,7 @@ function renderZahlungsEntwurf(){
  let sum=0;
  for(const item of state.paymentEntwurf){
   const line=document.createElement("div");line.style.cssText="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #ddd;flex-wrap:wrap";
-  const label=document.createElement("label");label.style.flex="1 1 220px";label.textContent=item.p.datum.split("-").reverse().join(".")+" · "+item.p.label+" (offen "+euro(item.p.offenCent/100)+")";
+  const label=document.createElement("label");label.style.flex="1 1 220px";label.textContent=zahlungsDatumDeutsch(item.p.datum)+" · "+item.p.label+" (offen "+euro(item.p.offenCent/100)+")";
   const field=document.createElement("input");field.type="number";field.min="0";field.max=String(item.p.offenCent/100);field.step="0.01";field.value=(item.cent/100).toFixed(2);field.style.width="100px";field.setAttribute("aria-label","Zuordnung in Euro");
   field.onchange=()=>{const n=zahlungsCents(field.value);item.cent=n===null?0:Math.min(n,item.p.offenCent);renderZahlungsEntwurf();};
   if(item.p.art==="stunden"&&item.p.gesamtCent>0){
@@ -1112,8 +1028,9 @@ function renderZahlungsEntwurf(){
   line.append(label,field,remove);g.appendChild(line);sum+=item.cent;
  }
  const rest=gesamt===null?null:gesamt-sum;
- $("zahlungRestNeu").textContent=rest===null?"Bitte gültigen Zahlungsbetrag eingeben.":"Zugeordnet: "+euro(sum/100)+" · Rest: "+euro(rest/100);
- $("zahlungBuchenNeu").disabled=!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&state.paymentEntwurf.every(x=>x.cent>0)&&$("zahlungDatumNeu").value);
+ const leer=!$("zahlungBetragNeu").value.trim()&&state.paymentEntwurf.length===0;
+ $("zahlungRestNeu").textContent=leer?"":rest===null?"Bitte gültigen Zahlungsbetrag eingeben.":"Zugeordnet: "+euro(sum/100)+" · Rest: "+euro(rest/100);
+ $("zahlungBuchenNeu").disabled=!!offeneZahlungsBuchung||!!offeneStornierung||!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&state.paymentEntwurf.every(x=>x.cent>0)&&$("zahlungDatumNeu").value);
 }
 async function zahlungSuchenNeu(){
  if(state.paymentVersion!==1){await zahlungenLaden();if(state.paymentVersion!==1)return;}
@@ -1131,9 +1048,9 @@ let offeneZahlungsBuchung=null;
 async function zahlungBuchenNeu(){
  const date=$("zahlungDatumNeu").value,cent=zahlungsCents($("zahlungBetragNeu").value);
  const items=state.paymentEntwurf;
- if(offeneZahlungsBuchung){$("zahlungStatusNeu").textContent="Vorherige Zahlung noch ungeklärt. Bitte zuerst die Historie prüfen.";return;}
- if(!date||cent===null||!items.length||items.some(x=>x.cent<=0)||items.reduce((s,x)=>s+x.cent,0)!==cent)return;
- if(!confirm("Zahlung über "+euro(cent/100)+" vom "+date.split("-").reverse().join(".")+" mit "+items.length+" Zuordnung(en) verbindlich buchen?"))return;
+ if(offeneZahlungsBuchung||offeneStornierung){$("zahlungStatusNeu").textContent="Vorherige Zahlung noch ungeklärt. Bitte zuerst die Historie prüfen.";return;}
+ if(state.paymentVersion!==1||!date||cent===null||!items.length||items.some(x=>x.cent<=0)||items.reduce((s,x)=>s+x.cent,0)!==cent)return;
+ if(!confirm("Zahlung über "+euro(cent/100)+" vom "+zahlungsDatumDeutsch(date)+" mit "+items.length+" Zuordnung(en) verbindlich buchen?"))return;
  const payload={id:"janezahlung_"+Date.now()+"_"+Math.random().toString(36).slice(2),datum:date,betrag:cent/100,notiz:"",positionen:items.map(x=>({datum:x.p.datum,art:x.p.art,id:x.p.id||"",betragCent:x.cent,gesamtCent:x.p.gesamtCent}))};
  offeneZahlungsBuchung=payload;
  $("zahlungBuchenNeu").disabled=true;
