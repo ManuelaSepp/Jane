@@ -4,7 +4,8 @@ const state={
   cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
   zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[],paymentVersion:0,paymentPositionen:[],paymentJournal:[],paymentEntwurf:[]
 };
-let jsonpSequenz=0,ladeSequenz=0;
+let jsonpSequenz=0,ladeSequenz=0,zahlungsLadeSequenz=0;
+const bestaetigteZahlungsIds=new Set();
 
 const form=$("entryForm"),datum=$("datum"),beginn=$("beginn"),ende=$("ende"),beginn2=$("beginn2"),ende2=$("ende2"),abwesenheit=$("abwesenheit"),fahrziel=$("fahrziel"),notiz=$("notiz"),meldung=$("meldung");
 const save=$("saveButton"),update=$("updateButton"),del=$("deleteButton"),copyTime=$("copyTimeButton"),copyTimeTrips=$("copyTimeTripsButton"),cancel=$("cancelButton"),buttonRow=$("buttonRow");
@@ -962,15 +963,45 @@ function zahlungsCents(text){
  return Number.isSafeInteger(cent)&&cent>0?cent:null;
 }
 function zahlungKennung(p){return JSON.stringify([p.datum,p.art,p.id||""])}
+function renderZahlungen(){
+ renderZahlungsHistorie();renderZahlungsAuswahl();
+ renderStatistik();renderMonatsGrid();renderKalender();
+}
+function bestaetigteZahlungAnzeigen(payload){
+ // Erst nach Schreibbestätigung: sofort anzeigen, ohne auf Jahresdaten zu warten.
+ ++zahlungsLadeSequenz;
+ bestaetigteZahlungsIds.add(payload.id);
+ if(!state.paymentJournal.some(z=>z.id===payload.id)){
+  state.paymentPositionen=state.paymentPositionen.map(p=>{
+   const item=payload.positionen.find(x=>zahlungKennung(x)===zahlungKennung(p));
+   return item?{...p,bezahltCent:p.bezahltCent+item.betragCent,offenCent:p.offenCent-item.betragCent}:p;
+  });
+  state.paymentJournal=[...state.paymentJournal,payload];
+ }
+ renderZahlungen();
+}
 async function zahlungenLaden(){
+ const seq=++zahlungsLadeSequenz;
  try{
-  const r=await jsonp({action:"paymentOverview"});
-  if(!r.ok||r.paymentVersion!==1)throw Error(r.message||"Zahlungsmodul nicht verfügbar");
+  let r;
+  for(let versuch=0;versuch<3;versuch++){
+   r=await jsonp({action:"paymentOverview"});
+   if(seq!==zahlungsLadeSequenz)return false;
+   if(!r.ok||r.paymentVersion!==1)throw Error(r.message||"Zahlungsmodul nicht verfügbar");
+   // Eine noch veraltete Serverübersicht darf bestätigte Buchungen nicht zurücksetzen.
+   if([...bestaetigteZahlungsIds].every(id=>(r.zahlungen||[]).some(z=>z.id===id)))break;
+   if(versuch===2)throw Error("Zahlungsübersicht noch nicht aktuell; bestätigte Anzeige bleibt erhalten.");
+   await schlafen(400);
+  }
+  bestaetigteZahlungsIds.clear();
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
-  renderZahlungsHistorie();
-  renderZahlungsAuswahl();
-  renderStatistik();renderMonatsGrid();renderKalender();
- }catch(e){state.paymentVersion=0;$("zahlungStatusNeu").textContent="Zahlungsverwaltung nicht verfügbar: "+e.message;$("zahlungBuchenNeu").disabled=true;}
+  renderZahlungen();return true;
+ }catch(e){
+  if(seq!==zahlungsLadeSequenz)return false;
+  $("zahlungStatusNeu").textContent="Zahlungsübersicht nicht aktualisiert: "+e.message;
+  $("zahlungBuchenNeu").disabled=true;
+  return false;
+ }
 }
 function renderZahlungsHistorie(){
  const g=$("zahlungHistorieNeu");g.replaceChildren();
@@ -1068,7 +1099,7 @@ function renderZahlungsAuswahl(){
  for(const p of zahlungsKandidaten()){
   const option=document.createElement("option");
   option.value=zahlungKennung(p);
-  option.textContent=p.datum+" · "+p.label+" · offen "+euro(p.offenCent/100);
+  option.textContent=String(p.datum||"").split("-").reverse().join(".")+" · "+p.label+" · offen "+euro(p.offenCent/100);
   select.appendChild(option);
  }
 }
@@ -1143,11 +1174,13 @@ async function zahlungBuchenNeu(){
  $("zahlungBuchenNeu").disabled=true;
  try{
   await schreiben("recordPayment",payload);
+  bestaetigteZahlungAnzeigen(payload);
   offeneZahlungsBuchung=null;
   state.paymentEntwurf=[];$("zahlungBetragNeu").value="";
-  await ladeJahr(state.kalenderDatum.getFullYear(),true);
-  await zahlungenLaden();renderZahlungsEntwurf();
+  renderZahlungsEntwurf();
   $("zahlungStatusNeu").textContent="Zahlung gespeichert.";
+  await zahlungenLaden();
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
  }catch(e){
   try{
    await zahlungenLaden();
