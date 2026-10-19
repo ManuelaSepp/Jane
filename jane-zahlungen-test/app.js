@@ -366,6 +366,7 @@ function renderAlles(){renderKalender();renderWoche();renderStatistik();renderMo
 function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 
 async function schreiben(action,payload){
+ if(action==="setLeistungBezahlt"||action==="setBezahlt")throw new Error("Alter Zahlungsstatus deaktiviert. Bitte das Zahlungsjournal verwenden.");
  const requestId="jane_"+Date.now()+"_"+Math.random().toString(36).slice(2);
  const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now())});
  await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",body,cache:"no-store"});
@@ -647,12 +648,14 @@ async function stundenlohnSpeichern(){
  }catch(e){zeige("Stundenlohn nicht gespeichert: "+e.message,"error");}
 }
 function zahlungBearbeitenStart(){
-  state.zahlungsModus=true;
+  // Legacy selection is disabled: all new payments use the journal.
+  state.zahlungsModus=false;
   state.zahlAuswahl.clear();
-  $("zahlungBearbeiten").classList.add("hidden");
-  $("zahlungAktionen").classList.remove("hidden");
-  renderZahlungsAuswahl();
-  renderKalender();
+  $("zahlungAktionen").classList.add("hidden");
+  $("zahlungBearbeiten").classList.remove("hidden");
+  const journal=$("zahlungenKarte");
+  journal.open=true;
+  journal.scrollIntoView({behavior:"smooth",block:"start"});
 }
 function zahlungBearbeitenEnde(){
   state.zahlungsModus=false;
@@ -707,6 +710,7 @@ function aktualisiereZahlungsButtons(){
  if(check)check.checked=all.length>0&&all.every(c=>c.checked);
 }
 async function zahlungsstatusSetzen(bezahlt){
+ zahlungBearbeitenStart();return;
  const positionen=zahlungsPositionen();
  const selected=[...$("zahlungLeistungen").querySelectorAll(".zahlung-position:checked")].map(c=>positionen[Number(c.dataset.index)]).filter(p=>p&&p.bezahlt!==bezahlt);
  if(!selected.length)return zeige("Bitte passende Leistungen auswählen.","error");
