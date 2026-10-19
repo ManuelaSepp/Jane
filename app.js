@@ -1,10 +1,11 @@
 const $=id=>document.getElementById(id);
 const state={
   eintraege:[],fahrziele:[],kalenderDatum:new Date(),ausgewaehlt:null,originalDatum:null,
-  cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
-  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[]
+  cacheJahr:null,jahresEintraege:[],jahresBestaetigung:null,jahresLadezustand:"laden",startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
+  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[],paymentVersion:0,paymentPositionen:[],paymentJournal:[],paymentEntwurf:[],paymentLadezustand:"laden"
 };
-let jsonpSequenz=0,ladeSequenz=0;
+let jsonpSequenz=0,ladeSequenz=0,zahlungsLadeSequenz=0;
+const bestaetigteZahlungsIds=new Set();
 
 const form=$("entryForm"),datum=$("datum"),beginn=$("beginn"),ende=$("ende"),beginn2=$("beginn2"),ende2=$("ende2"),abwesenheit=$("abwesenheit"),fahrziel=$("fahrziel"),notiz=$("notiz"),meldung=$("meldung");
 const save=$("saveButton"),update=$("updateButton"),del=$("deleteButton"),copyTime=$("copyTimeButton"),copyTimeTrips=$("copyTimeTripsButton"),cancel=$("cancelButton"),buttonRow=$("buttonRow");
@@ -46,7 +47,7 @@ function pruefeKonfiguration(){
   return true;
 }
 
-function cacheSchluessel(jahr){return "azFahrtenCache_"+jahr}
+function cacheSchluessel(jahr){return "azFahrtenJournalReset_v1_"+jahr}
 function speichereLokalenCache(jahr){
   try{
     localStorage.setItem(cacheSchluessel(jahr),JSON.stringify({
@@ -63,6 +64,7 @@ function ladeLokalenCache(jahr){
     const raw=localStorage.getItem(cacheSchluessel(jahr));
     if(!raw)return false;
     const r=JSON.parse(raw);
+    state.jahresBestaetigung=null;state.jahresLadezustand="laden";
     state.cacheJahr=jahr;
     state.jahresEintraege=Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[];
     state.fahrziele=Array.isArray(r.fahrziele)?r.fahrziele:[];
@@ -90,7 +92,11 @@ async function init(){
 
   if(pruefeKonfiguration()){
     if(!cacheDa)$("weekBox").textContent="Daten werden geladen …";
-    ladeJahr(jahr,cacheDa);
+    // Beide Leseabfragen sofort starten; Journal erst mit den Jahresdaten anzeigen.
+    const jahresdaten=ladeJahr(jahr,cacheDa);
+    await zahlungenLaden(jahresdaten);
+  }else{
+    state.paymentLadezustand="fehler";renderKalender();
   }
 }
 
@@ -313,10 +319,19 @@ async function laden(jahr){
 }
 async function ladeJahr(jahr,leise=false){
   const seq=++ladeSequenz;
+  state.jahresBestaetigung=null;state.jahresLadezustand="laden";
+  renderKalender();
   setNavigation(true);
   if(!leise)zeige("Lade Daten ...","");
   try{
-    const r=await laden(jahr);if(seq!==ladeSequenz)return;
+    const r=await laden(jahr);if(seq!==ladeSequenz)return null;
+    // Der Request bindet die Antwort ans Jahr; ein explizites Jahr und alle Einträge
+    // müssen dazu passen. Ein fehlendes Array ist keine bestätigte leere Jahresliste.
+    if(r.ok!==true||!Array.isArray(r.eintraegeJahr)||
+      (r.jahr!=null&&Number(r.jahr)!==jahr)||
+      r.eintraegeJahr.some(e=>!e||!/^\d{4}-\d{2}-\d{2}$/.test(e.datum)||Number(e.datum.slice(0,4))!==jahr)){
+      throw Error("Ungültige oder nicht zum Jahr passende Jahresantwort");
+    }
     state.cacheJahr=jahr;
     state.jahresEintraege=(Array.isArray(r.eintraegeJahr)?r.eintraegeJahr:[]).map(e=>({
       ...e,
@@ -347,12 +362,17 @@ async function ladeJahr(jahr,leise=false){
     state.startAdresse=String(r.startAdresse||"");
     $("startAdresse").value=state.startAdresse;
     monatLokalSetzen(jahr,state.kalenderDatum.getMonth()+1,false);
+    state.jahresBestaetigung={jahr,seq};state.jahresLadezustand="bereit";
     renderFahrzielDropdown();renderFahrziele();renderStundenlohn();renderAlles();
     speichereLokalenCache(jahr);
     if(!leise)zeige("","");
+    return state.jahresBestaetigung;
   }catch(e){
+    if(seq!==ladeSequenz)return null;
+    state.jahresBestaetigung=null;state.jahresLadezustand="fehler";renderKalender();
     if(!leise)zeige("Fehler: "+e.message,"error");
     else console.warn("Hintergrund-Aktualisierung fehlgeschlagen:",e);
+    return null;
   }
   finally{if(seq===ladeSequenz)setNavigation(false)}
 }
@@ -366,6 +386,7 @@ function renderAlles(){renderKalender();renderWoche();renderStatistik();renderMo
 function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 
 async function schreiben(action,payload){
+ if(action==="setLeistungBezahlt"||action==="setBezahlt")throw new Error("Alter Zahlungsstatus deaktiviert. Bitte das Zahlungsjournal verwenden.");
  const requestId="jane_"+Date.now()+"_"+Math.random().toString(36).slice(2);
  const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now())});
  await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",body,cache:"no-store"});
@@ -515,25 +536,77 @@ function resetForm(heute=true){
 }
 function editMode(a){$("einzelStatus").hidden=!a;if(!a){beginn.disabled=false;ende.disabled=false;beginn2.disabled=false;ende2.disabled=false;$("kmModus").disabled=false;$("kmPauschal").disabled=false;}save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;copyTimeTrips.hidden=!a;copyTimeTrips.disabled=a&&state.aktuelleFahrten.length===0;buttonRow.classList.toggle("edit-mode",a)}
 
+// Nur Anzeige: Journalpositionen haben Vorrang vor dem alten Ja/Nein-Status.
+function jahresdatenAktuell(){
+  const b=state.jahresBestaetigung;
+  return state.jahresLadezustand==="bereit"&&!!b&&b.seq===ladeSequenz&&
+    b.jahr===state.cacheJahr&&b.jahr===state.kalenderDatum.getFullYear();
+}
+function kalenderZahlungsLadezustand(){
+  if(state.jahresLadezustand==="fehler"||state.paymentLadezustand==="fehler")return "fehler";
+  if(state.jahresLadezustand==="laden"||state.paymentLadezustand==="laden")return "laden";
+  return jahresdatenAktuell()&&state.paymentVersion===1?"bereit":"fehler";
+}
+function kalenderZahlung(e){
+  // Weder Cache noch eine Journal-/Schreibbestätigung ersetzen die Jahresbestätigung.
+  const ladezustand=kalenderZahlungsLadezustand();
+  if(ladezustand!=="bereit"||Number(String(e.datum).slice(0,4))!==state.cacheJahr)return {
+    status:ladezustand==="laden"?"laden":"unbekannt",anteil:"",
+    details:ladezustand==="laden"?"Zahlungsstatus wird geladen …":"Zahlungsstatus unbekannt – Jahresdaten oder Journal nicht aktuell bestätigt."
+  };
+  const stunden=Number(e.stunden);
+  const positionen=state.paymentVersion===1?state.paymentPositionen.filter(p=>p.datum===e.datum&&p.art==="stunden"):[];
+  let status=e.bezahlt?"bezahlt":"offen",bezahltStunden=null,offenStunden=null,bezahltEuro=null,offenEuro=null;
+  if(positionen.length===1){
+    const p=positionen[0],gesamt=p.gesamtCent,bezahlt=p.bezahltCent,offen=p.offenCent;
+    const cents=v=>Number.isSafeInteger(v)&&v>=0;
+    if(cents(gesamt)&&gesamt>0&&cents(bezahlt)&&cents(offen)&&bezahlt+offen===gesamt){
+      status=bezahlt===0?"offen":offen===0?"bezahlt":"teilbezahlt";
+      bezahltEuro=bezahlt/100;offenEuro=offen/100;
+      if(Number.isFinite(stunden)&&stunden>0){bezahltStunden=stunden*bezahlt/gesamt;offenStunden=stunden-bezahltStunden;}
+    }else{
+      status=p.altBezahlt?"bezahlt":cents(bezahlt)&&bezahlt>0?"teilbezahlt":"offen";
+      if(p.altBezahlt&&Number.isFinite(stunden)&&stunden>0){bezahltStunden=stunden;offenStunden=0;}
+    }
+  }else if(!positionen.length){
+    if(Number.isFinite(stunden)&&stunden>0){bezahltStunden=e.bezahlt?stunden:0;offenStunden=e.bezahlt?0:stunden;}
+    const lohn=lohnFuerDatum(e.datum),wert=e.bezahlt&&e.stundenFix!=null?Number(e.stundenFix):lohn==null?null:stunden*lohn;
+    if(wert!==null&&Number.isFinite(wert)&&wert>=0){bezahltEuro=e.bezahlt?wert:0;offenEuro=e.bezahlt?0:wert;}
+  }
+  const anteil=bezahltStunden===null?"":format(bezahltStunden)+" von "+format(stunden)+" h bezahlt";
+  const details=["Arbeitsstunden: "+status];
+  if(bezahltStunden!==null)details.push("Bezahlt: "+format(bezahltStunden)+" h · Offen: "+format(offenStunden)+" h");
+  if(bezahltEuro!==null)details.push("Bezahlt: "+euro(bezahltEuro)+" · Offen: "+euro(offenEuro));
+  return {status,anteil,details:details.join("\n")};
+}
 function renderKalender(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth(),first=new Date(y,m,1),last=new Date(y,m+1,0),offset=(first.getDay()+6)%7,map=new Map(state.eintraege.map(e=>[e.datum,e])),g=$("calendarGrid");
   $("monthLabel").textContent=state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"});g.innerHTML="";
+  const status=$("kalenderZahlungsstatus");
+  const ladezustand=kalenderZahlungsLadezustand();
+  status.hidden=ladezustand==="bereit";
+  status.textContent=status.hidden?"":ladezustand==="fehler"?"Zahlungsstatus unbekannt. Jahresdaten oder Journal nicht aktuell bestätigt. Bitte erneut laden.":"Zahlungsstatus wird geladen …";
+  g.setAttribute("aria-busy",String(ladezustand==="laden"));
+  const ausgewaehlt=map.get(state.ausgewaehlt),info=$("tagZahlungsinfo");
+  info.hidden=!ausgewaehlt||!!ausgewaehlt.abwesenheit||!(Number(ausgewaehlt.stunden)>0);
+  info.textContent=info.hidden?"":ausIso(ausgewaehlt.datum).toLocaleDateString("de-DE")+"\n"+kalenderZahlung(ausgewaehlt).details;
   ["Mo","Di","Mi","Do","Fr","Sa","So"].forEach(n=>{const d=document.createElement("div");d.className="day-name";d.textContent=n;g.appendChild(d)});
   for(let i=0;i<offset;i++){const d=document.createElement("div");d.className="day-cell empty";g.appendChild(d)}
   for(let t=1;t<=last.getDate();t++){
     const dt=new Date(y,m,t),i=iso(dt),e=map.get(i),b=document.createElement("button");b.type="button";b.dataset.datum=i;
     const istArbeit=!!(e&&!e.abwesenheit);
+    const zahlung=istArbeit?kalenderZahlung(e):null;
     b.className="day-cell "
       +(e?(e.abwesenheit?"status-abwesenheit":"status-arbeit"):"")
       +(i===iso(new Date())?" today":"")
       +(!state.zahlungsModus&&i===state.ausgewaehlt?" selected":"")
-      +(istArbeit&&e.bezahlt?" status-bezahlt":"")
+      +(zahlung&&zahlung.status!=="offen"?" status-"+zahlung.status:"")
       +(state.zahlAuswahl.has(i)?" pay-selected":"");
     const label=e?(e.abwesenheit||format(e.stunden)+" h"+(Number(e.kilometer)>0?" · "+format(e.kilometer)+" km":"")):"";
-    const bezahltBadge=istArbeit&&e.bezahlt?'<span class="paid-badge">✓ bezahlt</span>':"";
+    const bezahltBadge=zahlung?'<span class="paid-badge">'+(zahlung.status==="bezahlt"?"✓ bezahlt":zahlung.status==="laden"?"lädt …":zahlung.status==="unbekannt"?"Status unbekannt":zahlung.status)+'</span>'+(zahlung.status==="teilbezahlt"&&zahlung.anteil?'<span class="status-label">'+zahlung.anteil+'</span>':""):"";
     b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>${bezahltBadge}`;
     if(e){
-      const tt=tooltipFuerEintrag(e)+(istArbeit?"\nZahlung: "+(e.bezahlt?"bezahlt":"offen"):"");
+      const tt=tooltipFuerEintrag(e)+(zahlung?"\n"+zahlung.details:"");
       b.title=tt.replace(/\n/g," | ");
       b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tt)});
       b.addEventListener("mousemove",ev=>{if(state.tooltipBlockDatum===i)return;tooltipPositionieren(ev.clientX,ev.clientY)});
@@ -616,12 +689,14 @@ async function stundenlohnSpeichern(){
  }catch(e){zeige("Stundenlohn nicht gespeichert: "+e.message,"error");}
 }
 function zahlungBearbeitenStart(){
-  state.zahlungsModus=true;
+  // Legacy selection is disabled: all new payments use the journal.
+  state.zahlungsModus=false;
   state.zahlAuswahl.clear();
-  $("zahlungBearbeiten").classList.add("hidden");
-  $("zahlungAktionen").classList.remove("hidden");
-  renderZahlungsAuswahl();
-  renderKalender();
+  $("zahlungAktionen").classList.add("hidden");
+  $("zahlungBearbeiten").classList.remove("hidden");
+  const journal=$("zahlungenKarte");
+  journal.open=true;
+  journal.scrollIntoView({behavior:"smooth",block:"start"});
 }
 function zahlungBearbeitenEnde(){
   state.zahlungsModus=false;
@@ -676,6 +751,7 @@ function aktualisiereZahlungsButtons(){
  if(check)check.checked=all.length>0&&all.every(c=>c.checked);
 }
 async function zahlungsstatusSetzen(bezahlt){
+ zahlungBearbeitenStart();return;
  const positionen=zahlungsPositionen();
  const selected=[...$("zahlungLeistungen").querySelectorAll(".zahlung-position:checked")].map(c=>positionen[Number(c.dataset.index)]).filter(p=>p&&p.bezahlt!==bezahlt);
  if(!selected.length)return zeige("Bitte passende Leistungen auswählen.","error");
@@ -771,8 +847,29 @@ async function kilometersatzSpeichern(){
   zeige("Kilometersatz gespeichert.","success");
  }catch(err){zeige("Kilometersatz nicht gespeichert: "+err.message,"error");}
 }
+function journalGeldWerte(eintraege){
+ if(state.paymentVersion!==1)return null;
+ const dates=new Set(eintraege.map(e=>e.datum));
+ const p=state.paymentPositionen.filter(x=>dates.has(x.datum));
+ const bekannt=p.every(x=>x.gesamtCent!==null);
+ const sum=(field)=>p.reduce((s,x)=>s+(Number(x[field])||0),0)/100;
+ return {bekannt,gesamt:sum("gesamtCent"),bezahlt:sum("bezahltCent"),offen:sum("offenCent")};
+}
+function journalStunden(eintraege){
+ const dates=new Set(eintraege.map(e=>e.datum));
+ let bezahlt=0,offen=0;
+ for(const p of state.paymentPositionen){
+  if(p.art!=="stunden"||!dates.has(p.datum))continue;
+  const e=eintraege.find(x=>x.datum===p.datum),lohn=lohnFuerDatum(p.datum);
+  if(!e||!lohn||p.gesamtCent===null)continue;
+  const anteil=Math.min(1,p.bezahltCent/p.gesamtCent);
+  bezahlt+=e.stunden*anteil;offen+=e.stunden*(1-anteil);
+ }
+ return {bezahlt,offen};
+}
 function renderStatistik(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth()+1,mw=monatsWerte(y,m),jw=jahresWerte(y);
+  if(state.paymentVersion===1){const j=journalGeldWerte(mw.daten),h=journalStunden(mw.daten);if(j)mw.geld={...mw.geld,...j};mw.bezahltStunden=h.bezahlt;mw.offenStunden=h.offen;}
   $("monatStunden").textContent=format(mw.stunden)+" h";
   $("monatKm").textContent=format(mw.km)+" km";
   $("monatBezahlt").textContent=format(mw.bezahltStunden)+" h";
@@ -787,6 +884,7 @@ function renderMonatsGrid(){
   const y=state.kalenderDatum.getFullYear(),namen=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],g=$("monatsGrid");g.innerHTML="";
   namen.forEach((n,i)=>{
     const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0,offenStunden:0};
+    if(state.paymentVersion===1&&state.cacheJahr===y)w.offenStunden=journalStunden(w.daten).offen;
     const d=document.createElement("div");d.className="year-month";
     d.innerHTML=`<span>${n}</span><strong>${format(w.stunden)} h</strong><small>${format(w.km)} km</small><small>${format(w.offenStunden)} h offen</small>`;
     g.appendChild(d)
@@ -894,3 +992,263 @@ function format(v){return Number(v||0).toLocaleString("de-DE",{maximumFractionDi
 function htmlSicher(v){return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;")}
 function schlafen(ms){return new Promise(r=>setTimeout(r,ms))}
 function zeige(t,k){meldung.textContent=t;meldung.className=k||""}
+
+/* Zahlungsjournal V1: separat vom bisherigen Zahlungsstatus; keine automatische Buchung. */
+function zahlungsCents(text){
+ const raw=String(text??"").trim().replace(/\s/g,"").replace(/€/g,"");
+ if(!raw)return null;
+ const norm=raw.includes(",")?raw.replace(/\./g,"").replace(",","."):raw;
+ if(!/^\d+(?:\.\d{1,2})?$/.test(norm))return null;
+ const n=Number(norm),cent=Math.round(n*100);
+ return Number.isSafeInteger(cent)&&cent>0?cent:null;
+}
+function zahlungKennung(p){return JSON.stringify([p.datum,p.art,p.id||""])}
+function renderZahlungen(){
+ renderZahlungsHistorie();renderZahlungsAuswahl();
+ renderStatistik();renderMonatsGrid();renderKalender();
+}
+function bestaetigteZahlungAnzeigen(payload){
+ // Erst nach Schreibbestätigung: sofort anzeigen, ohne auf Jahresdaten zu warten.
+ ++zahlungsLadeSequenz;
+ state.paymentLadezustand="bereit";
+ bestaetigteZahlungsIds.add(payload.id);
+ if(!state.paymentJournal.some(z=>z.id===payload.id)){
+  state.paymentPositionen=state.paymentPositionen.map(p=>{
+   const item=payload.positionen.find(x=>zahlungKennung(x)===zahlungKennung(p));
+   return item?{...p,bezahltCent:p.bezahltCent+item.betragCent,offenCent:p.offenCent-item.betragCent}:p;
+  });
+  state.paymentJournal=[...state.paymentJournal,payload];
+ }
+ renderZahlungen();
+}
+async function zahlungenLaden(jahresdaten=null){
+ const seq=++zahlungsLadeSequenz;
+ state.paymentLadezustand="laden";renderKalender();
+ try{
+  let r;
+  for(let versuch=0;versuch<3;versuch++){
+   r=await jsonp({action:"paymentOverview"});
+   if(seq!==zahlungsLadeSequenz)return false;
+   if(!r||!r.ok||r.paymentVersion!==1)throw Error(r?.message||"Zahlungsmodul nicht verfügbar");
+   if(!Array.isArray(r.positionen)||!Array.isArray(r.zahlungen))throw Error("Ungültige Zahlungsübersicht");
+   // Eine noch veraltete Serverübersicht darf bestätigte Buchungen nicht zurücksetzen.
+   if([...bestaetigteZahlungsIds].every(id=>(r.zahlungen||[]).some(z=>z.id===id)))break;
+   if(versuch===2)throw Error("Zahlungsübersicht noch nicht aktuell; bestätigte Buchungen bleiben erhalten.");
+   await schlafen(400);
+  }
+  // Eine erfüllte Promise allein bestätigt keine erfolgreich geladenen Jahresdaten.
+  const bestaetigung=jahresdaten?await jahresdaten:state.jahresBestaetigung;
+  if(seq!==zahlungsLadeSequenz)return false;
+  if(!jahresdatenAktuell()||bestaetigung!==state.jahresBestaetigung){
+   throw Error("Jahresdaten nicht aktuell bestätigt");
+  }
+  bestaetigteZahlungsIds.clear();
+  state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
+  state.paymentLadezustand="bereit";
+  renderZahlungen();return true;
+ }catch(e){
+  if(seq!==zahlungsLadeSequenz)return false;
+  state.paymentLadezustand="fehler";renderKalender();
+  $("zahlungStatusNeu").textContent="Zahlungsübersicht nicht aktualisiert: "+e.message;
+  $("zahlungBuchenNeu").disabled=true;
+  return false;
+ }
+}
+function renderZahlungsHistorie(){
+ const g=$("zahlungHistorieNeu");g.replaceChildren();
+ const z=[...state.paymentJournal].sort((a,b)=>String(b.datum).localeCompare(String(a.datum)));
+ if(!z.length){g.textContent="Noch keine Zahlungen im neuen Journal.";return;}
+ const reversed=new Set(z.filter(p=>p.stornoVon).map(p=>p.stornoVon));
+ const groups=new Map();
+ for(const p of z){const month=String(p.datum||"").slice(0,7);if(!groups.has(month))groups.set(month,[]);groups.get(month).push(p);}
+ for(const [month,entries] of groups){
+  const section=document.createElement("details");section.style.cssText="border-top:1px solid #ddd;padding:10px 0";
+  const summary=document.createElement("summary");summary.style.cssText="cursor:pointer;font-weight:700";
+  const [year,mon]=month.split("-");
+  const monthName=new Date(Number(year),Number(mon)-1,1).toLocaleDateString("de-DE",{month:"long",year:"numeric"});
+  summary.textContent=monthName+" · "+entries.length+" Buchung(en)";
+  section.appendChild(summary);
+  for(const p of entries){
+   const d=document.createElement("div");d.style.cssText="border-top:1px solid #eee;padding:8px 0";
+   const title=document.createElement("div");
+   title.textContent=String(p.datum||"").split("-").reverse().join(".")+" · "+euro(p.betrag)+" · "+(p.stornoVon?"Stornierung":"Zahlung")+(reversed.has(p.id)?" (storniert)":"");
+   d.appendChild(title);
+   for(const item of p.positionen||[]){
+    const line=document.createElement("div");line.style.cssText="font-size:.9em;padding:2px 0 2px 12px";
+    line.textContent=String(item.datum||"").split("-").reverse().join(".")+" · "+String(item.label||item.art||"")+" · "+euro(item.betragCent/100);
+    d.appendChild(line);
+   }
+   if(p.betrag>0&&!reversed.has(p.id)){
+    const btn=document.createElement("button");btn.type="button";btn.textContent="Zahlung stornieren";
+    btn.onclick=()=>zahlungStornierenNeu(p);d.appendChild(btn);
+   }
+   section.appendChild(d);
+  }
+  g.appendChild(section);
+ }
+}
+let offeneStornierung=null;
+async function zahlungStornierenNeu(p){
+ if(offeneStornierung||offeneZahlungsBuchung)return;
+ if(!confirm("Zahlung vom "+p.datum+" über "+euro(p.betrag)+" vollständig stornieren? Die Zuordnungen werden wieder offen."))return;
+ offeneStornierung=p.id;
+ try{
+  await schreiben("reversePayment",{id:p.id,datum:iso(new Date())});
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
+  await zahlungenLaden();
+  $("zahlungStatusNeu").textContent="Zahlung storniert.";
+  offeneStornierung=null;
+ }catch(e){
+  try{await zahlungenLaden();if(state.paymentJournal.some(x=>x.stornoVon===p.id)){offeneStornierung=null;$("zahlungStatusNeu").textContent="Stornierung im Journal bestätigt.";return;}}catch(_){}
+  $("zahlungStatusNeu").textContent="Stornierung nicht bestätigt. Bitte Historie prüfen, bevor du erneut stornierst: "+e.message;
+ }
+}
+
+function zahlungsKandidaten(){
+ return state.paymentPositionen.filter(p=>p.offenCent>0&&p.gesamtCent!==null&&!p.altBezahlt);
+}
+function zahlungsVorschlag(cents){
+ const candidates=zahlungsKandidaten().sort((a,b)=>a.datum.localeCompare(b.datum)||b.offenCent-a.offenCent);
+ // Exakte Kombination aus bis zu vier vollständig offenen Positionen bevorzugen.
+ // Suche ist absichtlich begrenzt, damit die Oberfläche auch bei vielen Einträgen reagiert.
+ const eligible=candidates.filter(p=>p.offenCent<=cents).slice(0,90);
+ const byAmount=new Map();
+ for(let i=0;i<eligible.length;i++){
+  const amount=eligible[i].offenCent;
+  if(!byAmount.has(amount))byAmount.set(amount,i);
+ }
+ for(let i=0;i<eligible.length;i++){
+  const p=eligible[i],rest=cents-p.offenCent;
+  if(rest===0)return [{p,cent:p.offenCent}];
+  const j=byAmount.get(rest);
+  if(j!==undefined&&j!==i)return [i,j].map(k=>({p:eligible[k],cent:eligible[k].offenCent}));
+ }
+ const pairs=new Map();
+ for(let i=0;i<eligible.length;i++)for(let j=i+1;j<eligible.length;j++){
+  const sum=eligible[i].offenCent+eligible[j].offenCent;
+  if(sum<cents&&!pairs.has(sum))pairs.set(sum,[i,j]);
+  if(sum===cents)return [i,j].map(k=>({p:eligible[k],cent:eligible[k].offenCent}));
+ }
+ for(let k=0;k<eligible.length;k++){
+  const pair=pairs.get(cents-eligible[k].offenCent);
+  if(pair&&pair[0]!==k&&pair[1]!==k)return [...pair,k].map(i=>({p:eligible[i],cent:eligible[i].offenCent}));
+ }
+ // Vierer-Kombinationen: alle Paare vergleichen, ohne Position doppelt zu verwenden.
+ for(const [sum,pair] of pairs){
+  const other=pairs.get(cents-sum);
+  if(other&&pair.every(i=>!other.includes(i)))return [...pair,...other].map(i=>({p:eligible[i],cent:eligible[i].offenCent}));
+ }
+ // Wenn keine exakte Kombination gefunden wurde, Betrag chronologisch teilweise zuordnen.
+ let rest=cents,result=[];
+ for(const p of candidates){if(rest<=0)break;const cent=Math.min(rest,p.offenCent);result.push({p,cent});rest-=cent;}
+ return rest===0?result:[];
+}
+function renderZahlungsAuswahl(){
+ const select=$("zahlungManuellNeu");if(!select)return;
+ select.replaceChildren();
+ const first=document.createElement("option");first.value="";first.textContent="Bitte auswählen";select.appendChild(first);
+ for(const p of zahlungsKandidaten()){
+  const option=document.createElement("option");
+  option.value=zahlungKennung(p);
+  option.textContent=String(p.datum||"").split("-").reverse().join(".")+" · "+p.label+" · offen "+euro(p.offenCent/100);
+  select.appendChild(option);
+ }
+}
+function zahlungHinzufuegenNeu(){
+ const key=$("zahlungManuellNeu").value;
+ const p=zahlungsKandidaten().find(x=>zahlungKennung(x)===key);
+ if(!p)return;
+ if(state.paymentEntwurf.some(x=>zahlungKennung(x.p)===key))return;
+ const total=zahlungsCents($("zahlungBetragNeu").value);
+ const assigned=state.paymentEntwurf.reduce((sum,x)=>sum+x.cent,0);
+ state.paymentEntwurf.push({p,cent:Math.min(p.offenCent,Math.max(0,(total||0)-assigned))});
+ renderZahlungsEntwurf();
+}
+function renderZahlungsEntwurf(){
+ const g=$("zahlungTrefferNeu");g.replaceChildren();
+ const gesamt=zahlungsCents($("zahlungBetragNeu").value);
+ let sum=0;
+ for(const item of state.paymentEntwurf){
+  const line=document.createElement("div");line.style.cssText="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #ddd;flex-wrap:wrap";
+  const label=document.createElement("label");label.style.flex="1 1 220px";label.textContent=item.p.datum.split("-").reverse().join(".")+" · "+item.p.label+" (offen "+euro(item.p.offenCent/100)+")";
+  const field=document.createElement("input");field.type="number";field.min="0";field.max=String(item.p.offenCent/100);field.step="0.01";field.value=(item.cent/100).toFixed(2);field.style.width="100px";field.setAttribute("aria-label","Zuordnung in Euro");
+  field.onchange=()=>{const n=zahlungsCents(field.value);item.cent=n===null?0:Math.min(n,item.p.offenCent);renderZahlungsEntwurf();};
+  if(item.p.art==="stunden"&&item.p.gesamtCent>0){
+   const entry=state.jahresEintraege.find(e=>e.datum===item.p.datum);
+   const totalHours=Number(entry?.stunden||0);
+   if(totalHours>0){
+    const alreadyPaid=Math.max(0,Number(item.p.bezahltCent||0));
+    const maxHours=totalHours*Math.max(0,item.p.offenCent)/item.p.gesamtCent;
+    const hours=document.createElement("input");
+    hours.type="number";hours.min="0";hours.max=String(maxHours);hours.step="0.01";
+    hours.value=(totalHours*item.cent/item.p.gesamtCent).toFixed(2);
+    hours.style.width="90px";hours.setAttribute("aria-label","Bezahlte Teilstunden");
+    hours.title="Teilstunden für diesen Arbeitstag; Betrag wird automatisch berechnet";
+    hours.onchange=()=>{
+     const h=Number(String(hours.value).replace(",","."));
+     if(!Number.isFinite(h)||h<0||h>maxHours){renderZahlungsEntwurf();return;}
+     item.cent=Math.min(item.p.offenCent,Math.round(h*item.p.gesamtCent/totalHours));
+     renderZahlungsEntwurf();
+    };
+    const unit=document.createElement("span");unit.textContent="h bezahlt";
+    line.append(hours,unit);
+   }
+  }
+  const remove=document.createElement("button");remove.type="button";remove.textContent="Entfernen";remove.onclick=()=>{state.paymentEntwurf=state.paymentEntwurf.filter(x=>x!==item);renderZahlungsEntwurf()};
+  line.append(label,field,remove);g.appendChild(line);sum+=item.cent;
+ }
+ const rest=gesamt===null?null:gesamt-sum;
+ $("zahlungRestNeu").textContent=rest===null?"Bitte gültigen Zahlungsbetrag eingeben.":"Zugeordnet: "+euro(sum/100)+" · Rest: "+euro(rest/100);
+ $("zahlungBuchenNeu").disabled=!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&state.paymentEntwurf.every(x=>x.cent>0)&&$("zahlungDatumNeu").value);
+}
+async function zahlungSuchenNeu(){
+ if(state.paymentVersion!==1){await zahlungenLaden();if(state.paymentVersion!==1)return;}
+ const cent=zahlungsCents($("zahlungBetragNeu").value);
+ if(cent===null)return $("zahlungStatusNeu").textContent="Bitte gültigen positiven Betrag eingeben.";
+ if(!$("zahlungDatumNeu").value)return $("zahlungStatusNeu").textContent="Bitte Zahlungsdatum auswählen.";
+ // Refresh before proposing allocations.
+ await zahlungenLaden();
+ const v=zahlungsVorschlag(cent);
+ state.paymentEntwurf=v;
+ $("zahlungStatusNeu").textContent=v.length?"Vorschlag gefunden. Bitte jede Zuordnung prüfen und ggf. anpassen.":"Kein vollständig zuordenbarer Vorschlag. Bitte Betrag und offene Leistungen prüfen.";
+ renderZahlungsEntwurf();
+}
+let offeneZahlungsBuchung=null;
+async function zahlungBuchenNeu(){
+ const date=$("zahlungDatumNeu").value,cent=zahlungsCents($("zahlungBetragNeu").value);
+ const items=state.paymentEntwurf;
+ if(offeneZahlungsBuchung){$("zahlungStatusNeu").textContent="Vorherige Zahlung noch ungeklärt. Bitte zuerst die Historie prüfen.";return;}
+ if(!date||cent===null||!items.length||items.some(x=>x.cent<=0)||items.reduce((s,x)=>s+x.cent,0)!==cent)return;
+ if(!confirm("Zahlung über "+euro(cent/100)+" vom "+date.split("-").reverse().join(".")+" mit "+items.length+" Zuordnung(en) verbindlich buchen?"))return;
+ const payload={id:"janezahlung_"+Date.now()+"_"+Math.random().toString(36).slice(2),datum:date,betrag:cent/100,notiz:"",positionen:items.map(x=>({datum:x.p.datum,art:x.p.art,id:x.p.id||"",betragCent:x.cent,gesamtCent:x.p.gesamtCent}))};
+ offeneZahlungsBuchung=payload;
+ $("zahlungBuchenNeu").disabled=true;
+ try{
+  await schreiben("recordPayment",payload);
+  bestaetigteZahlungAnzeigen(payload);
+  offeneZahlungsBuchung=null;
+  state.paymentEntwurf=[];$("zahlungBetragNeu").value="";
+  renderZahlungsEntwurf();
+  $("zahlungStatusNeu").textContent="Zahlung gespeichert.";
+  await zahlungenLaden();
+  await ladeJahr(state.kalenderDatum.getFullYear(),true);
+ }catch(e){
+  try{
+   await zahlungenLaden();
+   if(state.paymentJournal.some(z=>z.id===payload.id)){
+    offeneZahlungsBuchung=null;state.paymentEntwurf=[];$("zahlungBetragNeu").value="";
+    await ladeJahr(state.kalenderDatum.getFullYear(),true);renderZahlungsEntwurf();
+    $("zahlungStatusNeu").textContent="Zahlung im Journal bestätigt.";return;
+   }
+  }catch(_){}
+  $("zahlungStatusNeu").textContent="Speicherstatus ungeklärt. Nicht erneut buchen! Zahlungs-ID: "+payload.id+". "+e.message;
+  $("zahlungBuchenNeu").disabled=true;
+ }
+}
+
+$("zahlungDatumNeu").value=iso(new Date());
+$("zahlungSuchenNeu").onclick=zahlungSuchenNeu;
+$("zahlungHinzufuegenNeu").onclick=zahlungHinzufuegenNeu;
+$("zahlungBuchenNeu").onclick=zahlungBuchenNeu;
+$("zahlungBetragNeu").oninput=()=>{state.paymentEntwurf=[];renderZahlungsEntwurf()};
+$("zahlungDatumNeu").onchange=renderZahlungsEntwurf;

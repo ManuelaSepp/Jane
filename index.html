@@ -32,6 +32,14 @@ details.card{padding:0;overflow:hidden}summary{padding:18px 20px;font-size:19px;
 .wage-current{margin-top:12px;padding:12px;border-radius:10px;background:#eef3f7;font-weight:700}.wage-history{display:grid;gap:7px;margin-top:10px}.wage-item{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #e3e7eb;border-radius:10px;background:#f8f9fa}.wage-item span{color:#667085}.payment-tools{margin-top:14px;padding-top:12px;border-top:1px solid #e3e7eb}.payment-edit{border:0;background:#4a6fa5;color:#fff;font-weight:700}.payment-info{margin:0 0 10px;text-align:center;font-weight:700}.payment-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.payment-action-grid button{border:0;color:#fff;font-weight:700}.payment-cancel{grid-column:1/-1;background:#7b8794}.export-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.export-row button{border:0;color:#fff;font-weight:700}.export-excel{background:#3f7f3f}.export-pdf{background:#4a6fa5}.export-hint{margin:10px 0 0;color:#667085;font-size:12px}
 @media(max-width:420px){.app{padding:8px}.row,.action-row,.export-row,.payment-action-grid,.fahrt-add-row{grid-template-columns:1fr}.fahrt-add-row button{width:100%}.payment-cancel{grid-column:auto}.year-month-grid{grid-template-columns:repeat(2,1fr)}}
 details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px;margin:12px 0}details.mobile-optional summary{cursor:pointer;font-weight:700;padding:5px}details.mobile-optional[open] summary{margin-bottom:10px}.sonder-vorlage{flex:1 1 100%;min-width:0} .sonder-zeile{border-bottom:1px solid #e4e9e6;padding-bottom:10px}</style>
+<style>
+.day-cell.status-bezahlt{background:#dff3d2}
+.day-cell.status-teilbezahlt{background:#ffe3bd;box-shadow:inset 0 0 0 2px #d97706}
+.status-teilbezahlt .paid-badge{color:#92400e}
+.status-arbeit:not(.status-bezahlt):not(.status-teilbezahlt) .paid-badge{color:#245b8a}
+.day-cell.status-laden,.day-cell.status-unbekannt{background:#f1f3f5}
+.day-cell.status-laden .paid-badge,.day-cell.status-unbekannt .paid-badge{color:#58616b}
+</style>
 </head>
 <body>
 <main class="app">
@@ -49,6 +57,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 <div><label for="ende2">Zweiter Dienst – Ende (optional)</label><input type="text" id="ende2" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"></div>
 </div></details>
 <div class="info-box">Berechnete Stunden: <span id="stundenAnzeige">0</span></div>
+<div id="tagZahlungsinfo" class="info-box" style="white-space:pre-line" role="status" hidden></div>
 <details class="mobile-optional" id="sonderDetails"><summary>Sonderleistungen (optional)</summary><div style="margin-top:12px"><label>Sonderleistungen (optional)</label><div id="sonderListe"></div><button type="button" onclick="sonderleistungHinzufuegen()">+ Sonderleistung hinzufügen</button></div></details><label for="abwesenheit">Abwesenheit</label>
 <select id="abwesenheit"><option value="">Keine</option><option>Urlaub</option><option>Krank</option></select>
 <details class="mobile-optional" id="fahrtenDetails"><summary>Fahrten & Kilometer (optional)</summary><label for="fahrziel">Fahrt hinzufügen</label>
@@ -83,8 +92,9 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </div>
 <div class="calendar-head"><button id="prevMonth" type="button">‹</button><div id="monthLabel"></div><button id="nextMonth" type="button">›</button></div>
 <div id="calendarGrid" class="calendar-grid"></div>
+<div id="kalenderZahlungsstatus" class="info-box" role="status" aria-live="polite">Zahlungsstatus wird geladen …</div>
 <div class="payment-tools">
-  <button id="zahlungBearbeiten" type="button" class="payment-edit">Zahlungsstatus bearbeiten</button>
+  <button id="zahlungBearbeiten" type="button" class="payment-edit">Zahlungen zuordnen öffnen</button>
   <div id="zahlungAktionen" class="hidden">
     <div id="zahlungAuswahlText" class="payment-info">0 Arbeitstage ausgewählt</div>
     <div class="payment-action-grid">
@@ -96,6 +106,21 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </div>
 </div></details>
 
+<details class="card" id="zahlungenKarte"><summary>Zahlungen zuordnen (mit Zahlungsdatum)</summary><div class="content">
+<p class="export-hint">Zahlungseingang erfassen, offene Leistungen zuordnen und erst nach Prüfung verbindlich speichern. Auch Teilzahlungen sind möglich.</p>
+<label for="zahlungDatumNeu">Zahlungsdatum</label><input id="zahlungDatumNeu" type="date">
+<label for="zahlungBetragNeu">Erhaltener Betrag (€)</label><input id="zahlungBetragNeu" type="text" inputmode="decimal" placeholder="z. B. 180,00">
+<button id="zahlungSuchenNeu" type="button">Passende offene Leistungen suchen</button>
+<div id="zahlungStatusNeu" role="status" style="margin:10px 0"></div>
+<div id="zahlungTrefferNeu"></div>
+<label for="zahlungManuellNeu">Weitere offene Leistung manuell hinzufügen</label>
+<select id="zahlungManuellNeu"><option value="">Bitte auswählen</option></select>
+<button id="zahlungHinzufuegenNeu" type="button">Leistung hinzufügen</button>
+<div id="zahlungRestNeu" style="margin:12px 0;font-weight:700"></div>
+<button id="zahlungBuchenNeu" type="button" class="primary" disabled>Zahlung verbindlich speichern</button>
+</div></details>
+<details class="card" id="zahlungHistorieKarte"><summary>Zahlungshistorie</summary><div class="content"><p class="export-hint">Gespeicherte Zahlungen und Stornierungen nach Monaten.</p><div id="zahlungHistorieNeu"></div>
+</div></details>
 <details class="card"><summary>Jahresübersicht</summary><div class="content">
 <div class="overview">
 <div class="stat"><strong id="jahrStunden">0 h</strong><span>Stunden im Jahr</span></div>
@@ -145,7 +170,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=3.0"></script>
-<script src="app.js?v=3.1"></script>
+<script src="app.js?v=journal-reset-v1"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
 <script>document.querySelectorAll("details").forEach(el=>el.open=false);</script></body>
