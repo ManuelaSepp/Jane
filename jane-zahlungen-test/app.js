@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const state={
   eintraege:[],fahrziele:[],kalenderDatum:new Date(),ausgewaehlt:null,originalDatum:null,
   cacheJahr:null,jahresEintraege:[],startAdresse:"",routeTmp:null,tooltipBlockDatum:null,
-  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[],paymentVersion:0,paymentPositionen:[],paymentJournal:[],paymentEntwurf:[]
+  zahlungsModus:false,zahlAuswahl:new Set(),stundenloehne:[],kilometersaetze:[],aktuelleFahrten:[],paymentVersion:0,paymentPositionen:[],paymentJournal:[],paymentEntwurf:[],paymentLadezustand:"laden"
 };
 let jsonpSequenz=0,ladeSequenz=0,zahlungsLadeSequenz=0;
 const bestaetigteZahlungsIds=new Set();
@@ -92,6 +92,8 @@ async function init(){
   if(pruefeKonfiguration()){
     if(!cacheDa)$("weekBox").textContent="Daten werden geladen …";
     ladeJahr(jahr,cacheDa).then(()=>zahlungenLaden());
+  }else{
+    state.paymentLadezustand="fehler";renderKalender();
   }
 }
 
@@ -519,6 +521,11 @@ function editMode(a){$("einzelStatus").hidden=!a;if(!a){beginn.disabled=false;en
 
 // Nur Anzeige: Journalpositionen haben Vorrang vor dem alten Ja/Nein-Status.
 function kalenderZahlung(e){
+  // Cache-/Legacy-Felder sind vor einer aktuellen Journalantwort kein Zahlungsnachweis.
+  if(state.paymentLadezustand!=="bereit")return {
+    status:state.paymentLadezustand==="fehler"?"unbekannt":"laden",anteil:"",
+    details:state.paymentLadezustand==="fehler"?"Zahlungsstatus unbekannt – Journal konnte nicht geladen werden.":"Zahlungsstatus wird geladen …"
+  };
   const stunden=Number(e.stunden);
   const positionen=state.paymentVersion===1?state.paymentPositionen.filter(p=>p.datum===e.datum&&p.art==="stunden"):[];
   let status=e.bezahlt?"bezahlt":"offen",bezahltStunden=null,offenStunden=null,bezahltEuro=null,offenEuro=null;
@@ -547,6 +554,10 @@ function kalenderZahlung(e){
 function renderKalender(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth(),first=new Date(y,m,1),last=new Date(y,m+1,0),offset=(first.getDay()+6)%7,map=new Map(state.eintraege.map(e=>[e.datum,e])),g=$("calendarGrid");
   $("monthLabel").textContent=state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"});g.innerHTML="";
+  const status=$("kalenderZahlungsstatus");
+  status.hidden=state.paymentLadezustand==="bereit";
+  status.textContent=status.hidden?"":state.paymentLadezustand==="fehler"?"Zahlungsstatus unbekannt. Journal konnte nicht geladen werden. Bitte erneut laden.":"Zahlungsstatus wird geladen …";
+  g.setAttribute("aria-busy",String(state.paymentLadezustand==="laden"));
   const ausgewaehlt=map.get(state.ausgewaehlt),info=$("tagZahlungsinfo");
   info.hidden=!ausgewaehlt||!!ausgewaehlt.abwesenheit||!(Number(ausgewaehlt.stunden)>0);
   info.textContent=info.hidden?"":ausIso(ausgewaehlt.datum).toLocaleDateString("de-DE")+"\n"+kalenderZahlung(ausgewaehlt).details;
@@ -563,7 +574,7 @@ function renderKalender(){
       +(zahlung&&zahlung.status!=="offen"?" status-"+zahlung.status:"")
       +(state.zahlAuswahl.has(i)?" pay-selected":"");
     const label=e?(e.abwesenheit||format(e.stunden)+" h"+(Number(e.kilometer)>0?" · "+format(e.kilometer)+" km":"")):"";
-    const bezahltBadge=zahlung?'<span class="paid-badge">'+(zahlung.status==="bezahlt"?"✓ bezahlt":zahlung.status)+'</span>'+(zahlung.status==="teilbezahlt"&&zahlung.anteil?'<span class="status-label">'+zahlung.anteil+'</span>':""):"";
+    const bezahltBadge=zahlung?'<span class="paid-badge">'+(zahlung.status==="bezahlt"?"✓ bezahlt":zahlung.status==="laden"?"lädt …":zahlung.status==="unbekannt"?"Status unbekannt":zahlung.status)+'</span>'+(zahlung.status==="teilbezahlt"&&zahlung.anteil?'<span class="status-label">'+zahlung.anteil+'</span>':""):"";
     b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>${bezahltBadge}`;
     if(e){
       const tt=tooltipFuerEintrag(e)+(zahlung?"\n"+zahlung.details:"");
@@ -970,6 +981,7 @@ function renderZahlungen(){
 function bestaetigteZahlungAnzeigen(payload){
  // Erst nach Schreibbestätigung: sofort anzeigen, ohne auf Jahresdaten zu warten.
  ++zahlungsLadeSequenz;
+ state.paymentLadezustand="bereit";
  bestaetigteZahlungsIds.add(payload.id);
  if(!state.paymentJournal.some(z=>z.id===payload.id)){
   state.paymentPositionen=state.paymentPositionen.map(p=>{
@@ -982,22 +994,26 @@ function bestaetigteZahlungAnzeigen(payload){
 }
 async function zahlungenLaden(){
  const seq=++zahlungsLadeSequenz;
+ state.paymentLadezustand="laden";renderKalender();
  try{
   let r;
   for(let versuch=0;versuch<3;versuch++){
    r=await jsonp({action:"paymentOverview"});
    if(seq!==zahlungsLadeSequenz)return false;
-   if(!r.ok||r.paymentVersion!==1)throw Error(r.message||"Zahlungsmodul nicht verfügbar");
+   if(!r||!r.ok||r.paymentVersion!==1)throw Error(r?.message||"Zahlungsmodul nicht verfügbar");
+   if(!Array.isArray(r.positionen)||!Array.isArray(r.zahlungen))throw Error("Ungültige Zahlungsübersicht");
    // Eine noch veraltete Serverübersicht darf bestätigte Buchungen nicht zurücksetzen.
    if([...bestaetigteZahlungsIds].every(id=>(r.zahlungen||[]).some(z=>z.id===id)))break;
-   if(versuch===2)throw Error("Zahlungsübersicht noch nicht aktuell; bestätigte Anzeige bleibt erhalten.");
+   if(versuch===2)throw Error("Zahlungsübersicht noch nicht aktuell; bestätigte Buchungen bleiben erhalten.");
    await schlafen(400);
   }
   bestaetigteZahlungsIds.clear();
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
+  state.paymentLadezustand="bereit";
   renderZahlungen();return true;
  }catch(e){
   if(seq!==zahlungsLadeSequenz)return false;
+  state.paymentLadezustand="fehler";renderKalender();
   $("zahlungStatusNeu").textContent="Zahlungsübersicht nicht aktualisiert: "+e.message;
   $("zahlungBuchenNeu").disabled=true;
   return false;
