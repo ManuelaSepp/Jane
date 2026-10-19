@@ -515,25 +515,56 @@ function resetForm(heute=true){
 }
 function editMode(a){$("einzelStatus").hidden=!a;if(!a){beginn.disabled=false;ende.disabled=false;beginn2.disabled=false;ende2.disabled=false;$("kmModus").disabled=false;$("kmPauschal").disabled=false;}save.hidden=a;update.hidden=!a;del.hidden=!a;copyTime.hidden=!a;copyTimeTrips.hidden=!a;copyTimeTrips.disabled=a&&state.aktuelleFahrten.length===0;buttonRow.classList.toggle("edit-mode",a)}
 
+// Nur Anzeige: Journalpositionen haben Vorrang vor dem alten Ja/Nein-Status.
+function kalenderZahlung(e){
+  const stunden=Number(e.stunden);
+  const positionen=state.paymentVersion===1?state.paymentPositionen.filter(p=>p.datum===e.datum&&p.art==="stunden"):[];
+  let status=e.bezahlt?"bezahlt":"offen",bezahltStunden=null,offenStunden=null,bezahltEuro=null,offenEuro=null;
+  if(positionen.length===1){
+    const p=positionen[0],gesamt=p.gesamtCent,bezahlt=p.bezahltCent,offen=p.offenCent;
+    const cents=v=>Number.isSafeInteger(v)&&v>=0;
+    if(cents(gesamt)&&gesamt>0&&cents(bezahlt)&&cents(offen)&&bezahlt+offen===gesamt){
+      status=bezahlt===0?"offen":offen===0?"bezahlt":"teilbezahlt";
+      bezahltEuro=bezahlt/100;offenEuro=offen/100;
+      if(Number.isFinite(stunden)&&stunden>0){bezahltStunden=stunden*bezahlt/gesamt;offenStunden=stunden-bezahltStunden;}
+    }else{
+      status=p.altBezahlt?"bezahlt":cents(bezahlt)&&bezahlt>0?"teilbezahlt":"offen";
+      if(p.altBezahlt&&Number.isFinite(stunden)&&stunden>0){bezahltStunden=stunden;offenStunden=0;}
+    }
+  }else if(!positionen.length){
+    if(Number.isFinite(stunden)&&stunden>0){bezahltStunden=e.bezahlt?stunden:0;offenStunden=e.bezahlt?0:stunden;}
+    const lohn=lohnFuerDatum(e.datum),wert=e.bezahlt&&e.stundenFix!=null?Number(e.stundenFix):lohn==null?null:stunden*lohn;
+    if(wert!==null&&Number.isFinite(wert)&&wert>=0){bezahltEuro=e.bezahlt?wert:0;offenEuro=e.bezahlt?0:wert;}
+  }
+  const anteil=bezahltStunden===null?"":format(bezahltStunden)+" von "+format(stunden)+" h bezahlt";
+  const details=["Arbeitsstunden: "+status];
+  if(bezahltStunden!==null)details.push("Bezahlt: "+format(bezahltStunden)+" h · Offen: "+format(offenStunden)+" h");
+  if(bezahltEuro!==null)details.push("Bezahlt: "+euro(bezahltEuro)+" · Offen: "+euro(offenEuro));
+  return {status,anteil,details:details.join("\n")};
+}
 function renderKalender(){
   const y=state.kalenderDatum.getFullYear(),m=state.kalenderDatum.getMonth(),first=new Date(y,m,1),last=new Date(y,m+1,0),offset=(first.getDay()+6)%7,map=new Map(state.eintraege.map(e=>[e.datum,e])),g=$("calendarGrid");
   $("monthLabel").textContent=state.kalenderDatum.toLocaleString("de-DE",{month:"long",year:"numeric"});g.innerHTML="";
+  const ausgewaehlt=map.get(state.ausgewaehlt),info=$("tagZahlungsinfo");
+  info.hidden=!ausgewaehlt||!!ausgewaehlt.abwesenheit||!(Number(ausgewaehlt.stunden)>0);
+  info.textContent=info.hidden?"":ausIso(ausgewaehlt.datum).toLocaleDateString("de-DE")+"\n"+kalenderZahlung(ausgewaehlt).details;
   ["Mo","Di","Mi","Do","Fr","Sa","So"].forEach(n=>{const d=document.createElement("div");d.className="day-name";d.textContent=n;g.appendChild(d)});
   for(let i=0;i<offset;i++){const d=document.createElement("div");d.className="day-cell empty";g.appendChild(d)}
   for(let t=1;t<=last.getDate();t++){
     const dt=new Date(y,m,t),i=iso(dt),e=map.get(i),b=document.createElement("button");b.type="button";b.dataset.datum=i;
     const istArbeit=!!(e&&!e.abwesenheit);
+    const zahlung=istArbeit?kalenderZahlung(e):null;
     b.className="day-cell "
       +(e?(e.abwesenheit?"status-abwesenheit":"status-arbeit"):"")
       +(i===iso(new Date())?" today":"")
       +(!state.zahlungsModus&&i===state.ausgewaehlt?" selected":"")
-      +(istArbeit&&e.bezahlt?" status-bezahlt":"")
+      +(zahlung&&zahlung.status!=="offen"?" status-"+zahlung.status:"")
       +(state.zahlAuswahl.has(i)?" pay-selected":"");
     const label=e?(e.abwesenheit||format(e.stunden)+" h"+(Number(e.kilometer)>0?" · "+format(e.kilometer)+" km":"")):"";
-    const bezahltBadge=istArbeit&&e.bezahlt?'<span class="paid-badge">✓ bezahlt</span>':"";
+    const bezahltBadge=zahlung?'<span class="paid-badge">'+(zahlung.status==="bezahlt"?"✓ bezahlt":zahlung.status)+'</span>'+(zahlung.status==="teilbezahlt"&&zahlung.anteil?'<span class="status-label">'+zahlung.anteil+'</span>':""):"";
     b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>${bezahltBadge}`;
     if(e){
-      const tt=tooltipFuerEintrag(e)+(istArbeit?"\nZahlung: "+(e.bezahlt?"bezahlt":"offen"):"");
+      const tt=tooltipFuerEintrag(e)+(zahlung?"\n"+zahlung.details:"");
       b.title=tt.replace(/\n/g," | ");
       b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tt)});
       b.addEventListener("mousemove",ev=>{if(state.tooltipBlockDatum===i)return;tooltipPositionieren(ev.clientX,ev.clientY)});
@@ -934,7 +965,7 @@ async function zahlungenLaden(){
   state.paymentVersion=1;state.paymentPositionen=r.positionen||[];state.paymentJournal=r.zahlungen||[];
   renderZahlungsHistorie();
   renderZahlungsAuswahl();
-  renderStatistik();renderMonatsGrid();
+  renderStatistik();renderMonatsGrid();renderKalender();
  }catch(e){state.paymentVersion=0;$("zahlungStatusNeu").textContent="Zahlungsverwaltung nicht verfügbar: "+e.message;$("zahlungBuchenNeu").disabled=true;}
 }
 function renderZahlungsHistorie(){
