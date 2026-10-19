@@ -1198,8 +1198,8 @@ function renderZahlungsEntwurf(){
   line.append(label,field,remove);g.appendChild(line);sum+=item.cent;
  }
  const rest=gesamt===null?null:gesamt-sum;
- $("zahlungRestNeu").textContent=rest===null?"Bitte gültigen Zahlungsbetrag eingeben.":"Zugeordnet: "+euro(sum/100)+" · Rest: "+euro(rest/100);
- $("zahlungBuchenNeu").disabled=!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&state.paymentEntwurf.every(x=>x.cent>0)&&$("zahlungDatumNeu").value);
+ $("zahlungRestNeu").textContent=rest===null?(String($("zahlungBetragNeu").value).trim()?"Bitte gültigen Zahlungsbetrag eingeben.":""):"Zugeordnet: "+euro(sum/100)+" · Rest: "+euro(rest/100);
+ $("zahlungBuchenNeu").disabled=!!offeneZahlungsBuchung||!!offeneStornierung||!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&state.paymentEntwurf.every(x=>x.cent>0)&&$("zahlungDatumNeu").value);
 }
 async function zahlungSuchenNeu(){
  if(state.paymentVersion!==1){await zahlungenLaden();if(state.paymentVersion!==1)return;}

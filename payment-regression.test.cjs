@@ -12,7 +12,7 @@ function fixture(){
   fetch(){throw Error('Real network writes forbidden in regression tests')},
   setTimeout,clearTimeout});
  vm.runInContext(source.replace('\ninit();','\n// Startup disabled in isolated regression harness.'),context);
- vm.runInContext(`const originalRenderKalender=renderKalender;renderZahlungsHistorie=()=>{};renderStatistik=()=>{};renderMonatsGrid=()=>{};renderKalender=()=>{renders++};renderZahlungsEntwurf=()=>{};let renders=0;schlafen=async()=>{};`,context);
+ vm.runInContext(`const originalRenderKalender=renderKalender,originalRenderZahlungsEntwurf=renderZahlungsEntwurf;renderZahlungsHistorie=()=>{};renderStatistik=()=>{};renderMonatsGrid=()=>{};renderKalender=()=>{renders++};renderZahlungsEntwurf=()=>{};let renders=0;schlafen=async()=>{};`,context);
  const run=code=>vm.runInContext(code,context);
  run(`state.kalenderDatum=new Date(2026,9,1);state.cacheJahr=2026;
  state.jahresBestaetigung={jahr:2026,seq:ladeSequenz};state.jahresLadezustand='bereit';
@@ -21,6 +21,20 @@ function fixture(){
  const entry={datum:'2026-10-09',stunden:8,bezahlt:false};`);
  return {run,elements,context};
 }
+
+test('real draft renderer keeps cleared form neutral and malformed input visible',()=>{
+ const {run,elements}=fixture();run('renderZahlungsEntwurf=originalRenderZahlungsEntwurf;renderZahlungsEntwurf()');
+ assert.equal(elements.get('zahlungRestNeu').textContent,'');assert.equal(elements.get('zahlungBuchenNeu').disabled,true);
+ run(`$('zahlungBetragNeu').value='abc';renderZahlungsEntwurf()`);assert.match(elements.get('zahlungRestNeu').textContent,/gültigen Zahlungsbetrag/);
+});
+
+test('actual renderer cannot enable another booking while payment or reversal is pending',()=>{
+ for(const pending of ['offeneZahlungsBuchung','offeneStornierung']){
+  const {run,elements}=fixture();run(`renderZahlungsEntwurf=originalRenderZahlungsEntwurf;$('zahlungDatumNeu').value='2026-10-19';$('zahlungBetragNeu').value='25';state.paymentEntwurf=[{p:state.paymentPositionen[0],cent:2500}];renderZahlungsEntwurf()`);
+  assert.equal(elements.get('zahlungBuchenNeu').disabled,false);
+  run(`${pending}='pending';renderZahlungsEntwurf()`);assert.equal(elements.get('zahlungBuchenNeu').disabled,true);
+ }
+});
 
 function startupFixture(cached=false){
  const f=fixture();

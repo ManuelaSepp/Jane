@@ -2,6 +2,13 @@
 
 Stand 19.10.2026. **Entwurf, kein produktives Deployment oder Merge.**
 
+Aktualisierung: Der Cloud-Kerntest und beide HTTP-GET-Endpunkte der isolierten
+Google-Testkopie wurden inzwischen durch Nutzerbelege bestätigt. Der vollständige
+lokale HTTP-Browserlauf (inklusive POST/Ack, Teilzahlung, Kalender und Storno) wurde
+ebenfalls ausgeführt; dabei gefundene Frontendprobleme sind korrigiert. Grenzen
+und Nachweise stehen in `BROWSERPRUEFUNG.md`. Die nachstehenden offenen Cloudtests
+beziehen sich auf den noch nicht nachgewiesenen vollständigen Browserablauf gegen Google.
+
 ## Ziel und Umfang
 
 Die produktive Jane erhält die vollständige Zahlungsoberfläche aus
