@@ -1157,7 +1157,8 @@ function renderZahlungsAuswahl(){
  const select=$("zahlungManuellNeu");if(!select)return;
  select.replaceChildren();
  const first=document.createElement("option");first.value="";first.textContent="Bitte auswählen";select.appendChild(first);
- for(const p of zahlungsKandidaten()){
+ const bereits=new Set(state.paymentEntwurf.map(x=>zahlungKennung(x.p)));
+ for(const p of zahlungsKandidaten().filter(x=>!bereits.has(zahlungKennung(x)))){
   const option=document.createElement("option");
   option.value=zahlungKennung(p);
   option.textContent=String(p.datum||"").split("-").reverse().join(".")+" · "+p.label+" · offen "+euro(p.offenCent/100);
@@ -1209,6 +1210,7 @@ function renderZahlungsEntwurf(){
  }
  const rest=gesamt===null?null:gesamt-sum;
  $("zahlungRestNeu").textContent=rest===null?(String($("zahlungBetragNeu").value).trim()?"Bitte gültigen Zahlungsbetrag eingeben.":""):"Zugeordnet: "+euro(sum/100)+" · Rest: "+euro(rest/100);
+ renderZahlungsAuswahl();
  $("zahlungBuchenNeu").disabled=!!offeneZahlungsBuchung||!!offeneStornierung||!(state.paymentVersion===1&&gesamt!==null&&rest===0&&state.paymentEntwurf.length>0&&state.paymentEntwurf.every(x=>x.cent>0)&&$("zahlungDatumNeu").value);
 }
 async function zahlungSuchenNeu(){
