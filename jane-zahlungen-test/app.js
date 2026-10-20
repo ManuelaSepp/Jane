@@ -387,6 +387,7 @@ function renderAlles(){renderKalender();renderWoche();renderStatistik();renderMo
 function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 
 async function schreiben(action,payload){
+ throw new Error('TESTVERSION: Speichern ist gesperrt. Deine echten Daten bleiben unverändert.');
  if(action==="setLeistungBezahlt"||action==="setBezahlt")throw new Error("Alter Zahlungsstatus deaktiviert. Bitte das Zahlungsjournal verwenden.");
  const requestId="jane_"+Date.now()+"_"+Math.random().toString(36).slice(2);
  const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now())});
@@ -1116,6 +1117,8 @@ function renderZahlungsHistorie(){
 }
 let offeneStornierung=null;
 async function zahlungStornierenNeu(p){
+ $('zahlungStatusNeu').textContent='TESTVERSION: Stornieren ist gesperrt.';
+ return;
  if(offeneStornierung||offeneZahlungsBuchung)return;
  if(!confirm("Zahlung vom "+p.datum+" über "+euro(p.betrag)+" vollständig stornieren? Die Zuordnungen werden wieder offen."))return;
  offeneStornierung=p.id;
@@ -1222,6 +1225,8 @@ async function zahlungSuchenNeu(){
 }
 let offeneZahlungsBuchung=null;
 async function zahlungBuchenNeu(){
+ $('zahlungStatusNeu').textContent='TESTVERSION: Zahlungsvorschlag prüfen, Buchen ist gesperrt.';
+ return;
  const date=$("zahlungDatumNeu").value,cent=zahlungsCents($("zahlungBetragNeu").value);
  const items=state.paymentEntwurf;
  if(offeneZahlungsBuchung){$("zahlungStatusNeu").textContent="Vorherige Zahlung noch ungeklärt. Bitte zuerst die Historie prüfen.";return;}
