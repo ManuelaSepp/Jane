@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#70ad47">
-<title>Arbeitszeit & Fahrten</title>
+<title>Jane – TEST Zahlungszuordnung</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
@@ -42,6 +42,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </style>
 </head>
 <body>
+<div style="position:sticky;top:0;z-index:9999;background:#fff2c4;color:#513c00;text-align:center;padding:8px;font-weight:700;border-bottom:2px solid #dbb63a">🧪 TESTVERSION – nicht die echte Jane-App</div>
 <main class="app">
 <section class="card">
 <h1>Jane</h1>
@@ -141,7 +142,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 <div id="lohnHistorie" class="wage-history"></div>
 </div></details>
 
-<details class="card"><summary>Sonderleistungen-Vorlagen verwalten</summary><div class="content"><p class="export-hint">Vorlagen werden vorerst nur auf diesem Gerät gespeichert.</p><label for="sonderVorlageName">Bezeichnung</label><input id="sonderVorlageName" placeholder="z. B. Übernachtung"><label for="sonderVorlageDatum">Gültig ab Datum</label><input id="sonderVorlageDatum" type="date"><label for="sonderVorlageBetrag">Pauschale (€)</label><input id="sonderVorlageBetrag" inputmode="decimal" placeholder="z. B. 25,00"><button id="sonderVorlageSpeichern" type="button">Vorlage speichern</button><div id="sonderVorlagenListe"></div></div></details><details class="card"><summary>Kilometersatz verwalten</summary><div class="content"><label for="kmSatzMonat">Gültig ab Datum</label><input type="date" id="kmSatzMonat"><label for="kmSatzWert">Euro pro Kilometer</label><input type="text" inputmode="decimal" id="kmSatzWert" placeholder="z. B. 0,30"><button type="button" id="kmSatzSpeichern">Kilometersatz speichern</button></div></details><details class="card"><summary>Fahrziele verwalten</summary><div class="content">
+<details class="card"><summary>Sonderleistungen-Vorlagen verwalten</summary><div class="content"><p class="export-hint">Vorlagen werden vorerst nur auf diesem Gerät gespeichert.</p><label for="sonderVorlageName">Bezeichnung</label><input id="sonderVorlageName" placeholder="z. B. Übernachtung"><label for="sonderVorlageDatum">Gültig ab Datum</label><input id="sonderVorlageDatum" type="date"><label for="sonderVorlageBetrag">Pauschale (€)</label><input id="sonderVorlageBetrag" inputmode="decimal" placeholder="z. B. 25,00"><button id="sonderVorlageSpeichern" type="button">Vorlage speichern</button><div id="sonderVorlagenListe"></div></div></details><details class="card"><summary>Kilometersatz verwalten</summary><div class="content"><label for="kmSatzMonat">Gültig ab Datum</label><input type="date" id="kmSatzMonat"><label for="kmSatzWert">Euro pro Kilometer</label><input type="text" inputmode="decimal" id="kmSatzWert" placeholder="z. B. 0,30"><button type="button" id="kmSatzSpeichern" class="primary" style="margin-top:10px;border:0;color:#fff;font-weight:700">Kilometersatz speichern</button><div id="kmSatzAktuell" class="wage-current"></div><div id="kmSatzHistorie" class="wage-history"></div></div></details><details class="card"><summary>Fahrziele verwalten</summary><div class="content">
 <label for="startAdresse">Startadresse</label>
 <input id="startAdresse" type="text" placeholder="z. B. Zuhause, Straße Hausnummer, Ort">
 <button id="startSpeichern" type="button" class="primary" style="margin-top:10px;border:0;color:#fff;font-weight:700">Startadresse speichern</button>
@@ -170,7 +171,7 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=zahlungen-test-1"></script>
-<script src="app.js?v=zahlungen-test-20261019-year-confirmation6"></script>
+<script src="app.js?v=fifo-test-20261020-1"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
 <script>document.querySelectorAll("details").forEach(el=>el.open=false);</script></body>
