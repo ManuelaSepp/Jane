@@ -914,15 +914,29 @@ function renderStatistik(){
   $("monatVerdienst").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.gesamt):"–";$("monatSonder").textContent=euro(mw.geld.sonder||0);$("monatKmEuro").textContent=euro(mw.geld.km||0);
   $("jahrStunden").textContent=format(jw.stunden)+" h";
   $("jahrKm").textContent=format(jw.km)+" km";
+  const bereit=kalenderZahlungsLadezustand()==="bereit"&&state.cacheJahr===y;
+  const w=bereit?leistungsWerte(state.jahresEintraege.filter(e=>e.datum.startsWith(String(y)+"-"))):null;
+  jahresZahlungsInfo($("jahrStunden"),w?.stunden,"h");
+  jahresZahlungsInfo($("jahrKm"),w?.km,"km");
+}
+function jahresZahlungsInfo(el,w,einheit){
+ const k=el.parentElement;
+ let info=k.querySelector(".jahres-zahlungsinfo");
+ if(!info){info=document.createElement("div");info.className="jahres-zahlungsinfo";k.appendChild(info);}
+ if(!w){info.textContent="Zahlungsstatus wird geladen …";return;}
+ const teil=w.bezahlt>0&&w.offen>0;
+ info.innerHTML='<span class="zahlung-gruen">'+format(w.mengeBezahlt)+' '+einheit+' bezahlt</span><span class="'+(teil?"zahlung-orange":"zahlung-blau")+'">'+format(w.mengeOffen)+' '+einheit+' offen</span>';
 }
 function renderMonatsGrid(){
   const y=state.kalenderDatum.getFullYear(),namen=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],g=$("monatsGrid");g.innerHTML="";
+  const bereit=kalenderZahlungsLadezustand()==="bereit"&&state.cacheJahr===y;
   namen.forEach((n,i)=>{
-    const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0,offenStunden:0};
-    if(state.paymentVersion===1&&state.cacheJahr===y)w.offenStunden=journalStunden(w.daten).offen;
+    const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0,daten:[]};
+    const z=bereit?leistungsWerte(w.daten):null;
+    const status=(v,einheit)=>!v?'<small>Zahlungsstatus wird geladen …</small>':'<small class="zahlung-gruen">'+format(v.mengeBezahlt)+' '+einheit+' bezahlt</small><small class="'+(v.bezahlt>0&&v.offen>0?"zahlung-orange":"zahlung-blau")+'">'+format(v.mengeOffen)+' '+einheit+' offen</small>';
     const d=document.createElement("div");d.className="year-month";
-    d.innerHTML=`<span>${n}</span><strong>${format(w.stunden)} h</strong><small>${format(w.km)} km</small><small>${format(w.offenStunden)} h offen</small>`;
-    g.appendChild(d)
+    d.innerHTML='<span>'+n+'</span><strong>'+format(w.stunden)+' h</strong>'+status(z?.stunden,"h")+'<strong class="km-zeile">'+format(w.km)+' km</strong>'+status(z?.km,"km");
+    g.appendChild(d);
   });
 }
 async function monatWechseln(delta){
