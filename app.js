@@ -38,6 +38,7 @@ $("zahlungOffen").onclick=()=>zahlungsstatusSetzen(false);
 $("zahlungAbbrechen").onclick=zahlungBearbeitenEnde;
 $("sonderVorlageSpeichern").onclick=sonderVorlagenSpeichern;renderSonderVorlagen();$("lohnSpeichern").onclick=stundenlohnSpeichern;$("kmSatzSpeichern").onclick=kilometersatzSpeichern;
 $("lohnMonat").onchange=renderStundenlohn;
+$("kmSatzMonat").onchange=renderKilometersatz;
 
 function pruefeKonfiguration(){
   if(typeof SCRIPT_URL!=="string"||!SCRIPT_URL.trim()){
@@ -662,6 +663,7 @@ function geldWerte(eintraege){
  return{bekannt:!unbekannt,gesamt:stunden+km+sonder,bezahlt,offen,stunden,km,sonder};
 }
 function renderStundenlohn(){
+  renderKilometersatz();
   const monat=$("lohnMonat").value||iso(state.kalenderDatum);
   const probe=monat,lohn=lohnFuerDatum(probe);
   $("lohnAktuell").textContent=lohn?("Für dieses Datum gültig: "+euro(lohn)+" / Stunde"):"Für dieses Datum ist noch kein Stundenlohn hinterlegt.";
@@ -837,13 +839,38 @@ async function leistungBezahlt(art,id=""){
   if(e)eintragLaden(e);
  }catch(err){zeige("Zahlung konnte nicht bestätigt werden: "+err.message,"error");}
 }
+function renderKilometersatz(){
+  const datum=$("kmSatzMonat").value||iso(state.kalenderDatum);
+  const satz=kilometerSatzFuerDatum(datum);
+  $("kmSatzAktuell").textContent=satz!==null&&Number.isFinite(satz)
+    ?"Für dieses Datum gültig: "+euro(satz)+" / km"
+    :"Für dieses Datum ist noch kein Kilometersatz hinterlegt.";
+  const liste=$("kmSatzHistorie");
+  liste.innerHTML="";
+  if(!state.kilometersaetze.length){
+    liste.innerHTML='<div class="export-hint">Noch kein Kilometersatz gespeichert.</div>';
+    return;
+  }
+  [...state.kilometersaetze].reverse().forEach(x=>{
+    const d=document.createElement("div");
+    d.className="wage-item";
+    const [j,m,t]=x.ab.split("-");
+    const datumText=(t||"01")+"."+m+"."+j;
+    const links=document.createElement("span");
+    links.textContent="ab "+datumText;
+    const rechts=document.createElement("strong");
+    rechts.textContent=euro(Number(x.satz))+" / km";
+    d.append(links,rechts);
+    liste.appendChild(d);
+  });
+}
 async function kilometersatzSpeichern(){
  const ab=$("kmSatzMonat").value,satz=Number($("kmSatzWert").value.replace(",","."));
  if(!/^\d{4}-\d{2}-\d{2}$/.test(ab)||!Number.isFinite(satz)||satz<0)return zeige("Ungültiger Kilometersatz.","error");
  try{
   await schreiben("saveKilometersatz",{ab,satz});
   const x=state.kilometersaetze.find(v=>v.ab===ab);if(x)x.satz=satz;else state.kilometersaetze.push({ab,satz});
-  state.kilometersaetze.sort((a,b)=>a.ab.localeCompare(b.ab));renderStatistik();
+  state.kilometersaetze.sort((a,b)=>a.ab.localeCompare(b.ab));renderKilometersatz();renderStatistik();
   zeige("Kilometersatz gespeichert.","success");
  }catch(err){zeige("Kilometersatz nicht gespeichert: "+err.message,"error");}
 }
