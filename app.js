@@ -32,6 +32,7 @@ $("streckeBerechnen").onclick=streckeBerechnen;
 $("zielSpeichern").onclick=fahrzielSpeichern;
 $("exportExcel").onclick=exportExcel;
 $("exportPdf").onclick=exportPdf;
+$("exportZahlungenPdf").onclick=exportZahlungenPdf;
 $("zahlungBearbeiten").onclick=zahlungBearbeitenStart;
 $("zahlungBezahlt").onclick=()=>zahlungsstatusSetzen(true);
 $("zahlungOffen").onclick=()=>zahlungsstatusSetzen(false);
@@ -608,8 +609,14 @@ function renderKalender(){
     b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>${bezahltBadge}`;
     if(e){
       const tt=tooltipFuerEintrag(e)+(zahlung?"\n"+zahlung.details:"");
-      b.title=tt.replace(/\n/g," | ");
-      b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tt)});
+      const werte=kalenderZahlungsLadezustand()==="bereit"?leistungsWerte([e]):null;
+      const hover=werte?"\nZahlungsübersicht (Gesamt | Bezahlt | Offen):"+[["Arbeitsstunden","stunden","h"],["Kilometer","km","km"],["Sonderleistungen","sonder",""]].map(([name,art,einheit])=>{
+        const v=werte[art],f=(m,c)=>einheit?format(m)+" "+einheit+" / "+euro(c/100):euro(c/100);
+        return "\n"+name+": "+f(v.menge,v.gesamt)+" | "+f(v.mengeBezahlt,v.bezahlt)+" | "+f(v.mengeOffen,v.offen);
+      }).join(""):"";
+      const tooltipText=tt+hover;
+      b.title=tooltipText.replace(/\n/g," | ");
+      b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tooltipText)});
       b.addEventListener("mousemove",ev=>{if(state.tooltipBlockDatum===i)return;tooltipPositionieren(ev.clientX,ev.clientY)});
       b.addEventListener("mouseleave",()=>{if(state.tooltipBlockDatum===i)state.tooltipBlockDatum=null;tooltipAusblenden()});
     }
@@ -906,15 +913,29 @@ function renderStatistik(){
   $("monatVerdienst").textContent=mw.geld&&mw.geld.bekannt?euro(mw.geld.gesamt):"–";$("monatSonder").textContent=euro(mw.geld.sonder||0);$("monatKmEuro").textContent=euro(mw.geld.km||0);
   $("jahrStunden").textContent=format(jw.stunden)+" h";
   $("jahrKm").textContent=format(jw.km)+" km";
+  const bereit=kalenderZahlungsLadezustand()==="bereit"&&state.cacheJahr===y;
+  const w=bereit?leistungsWerte(state.jahresEintraege.filter(e=>e.datum.startsWith(String(y)+"-"))):null;
+  jahresZahlungsInfo($("jahrStunden"),w?.stunden,"h");
+  jahresZahlungsInfo($("jahrKm"),w?.km,"km");
+}
+function jahresZahlungsInfo(el,w,einheit){
+ const k=el.parentElement;
+ let info=k.querySelector(".jahres-zahlungsinfo");
+ if(!info){info=document.createElement("div");info.className="jahres-zahlungsinfo";k.appendChild(info);}
+ if(!w){info.textContent="Zahlungsstatus wird geladen …";return;}
+ const teil=w.bezahlt>0&&w.offen>0;
+ info.innerHTML='<span class="zahlung-gruen">'+format(w.mengeBezahlt)+' '+einheit+' bezahlt</span><span class="'+(teil?"zahlung-orange":"zahlung-blau")+'">'+format(w.mengeOffen)+' '+einheit+' offen</span>';
 }
 function renderMonatsGrid(){
   const y=state.kalenderDatum.getFullYear(),namen=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],g=$("monatsGrid");g.innerHTML="";
+  const bereit=kalenderZahlungsLadezustand()==="bereit"&&state.cacheJahr===y;
   namen.forEach((n,i)=>{
-    const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0,offenStunden:0};
-    if(state.paymentVersion===1&&state.cacheJahr===y)w.offenStunden=journalStunden(w.daten).offen;
+    const w=state.cacheJahr===y?monatsWerte(y,i+1):{stunden:0,km:0,daten:[]};
+    const z=bereit?leistungsWerte(w.daten):null;
+    const status=(v,einheit)=>!v?'<small>Zahlungsstatus wird geladen …</small>':'<small class="zahlung-gruen">'+format(v.mengeBezahlt)+' '+einheit+' bezahlt</small><small class="'+(v.bezahlt>0&&v.offen>0?"zahlung-orange":"zahlung-blau")+'">'+format(v.mengeOffen)+' '+einheit+' offen</small>';
     const d=document.createElement("div");d.className="year-month";
-    d.innerHTML=`<span>${n}</span><strong>${format(w.stunden)} h</strong><small>${format(w.km)} km</small><small>${format(w.offenStunden)} h offen</small>`;
-    g.appendChild(d)
+    d.innerHTML='<span>'+n+'</span><strong>'+format(w.stunden)+' h</strong>'+status(z?.stunden,"h")+'<strong class="km-zeile">'+format(w.km)+' km</strong>'+status(z?.km,"km");
+    g.appendChild(d);
   });
 }
 async function monatWechseln(delta){
@@ -975,37 +996,97 @@ async function exportExcel(){
   }catch(e){zeige("Excel-Export: "+e.message,"error")}
 }
 function pdfZahlungen(daten){
- const listen=[[],[]];
- const add=(e,name,wert,paid)=>{if(wert!=null&&Number.isFinite(wert)&&wert>0)listen[paid?1:0].push([ausIso(e.datum).toLocaleDateString("de-DE"),name,wert]);};
- for(const e of daten){
-  if(e.abwesenheit)continue;
-  const h=Number(e.stunden||0),lohn=lohnFuerDatum(e.datum),rate=kilometerSatzFuerDatum(e.datum);
-  if(h>0)add(e,"Arbeitsstunden ("+format(h)+" h)",e.bezahlt&&e.stundenFix!=null?Number(e.stundenFix):lohn==null?null:h*lohn,!!e.bezahlt);
-  const fahrten=Array.isArray(e.fahrten)?e.fahrten:[];
-  if(e.kmModus!=="pauschal"&&fahrten.length&&!e.kmBezahlt){
-   for(const f of fahrten)add(e,"Fahrt: "+(f.fahrziel||"ohne Ziel"),f.bezahlt&&f.fixbetrag!=null?Number(f.fixbetrag):rate==null?null:Number(f.kilometer||0)*rate,!!f.bezahlt);
-  }else{
-   const km=Number(e.kilometer||0),wert=e.kmBezahlt&&e.kmFix!=null?Number(e.kmFix):e.kmModus==="pauschal"?Number(e.kmPauschal||0):rate==null?(km?null:0):km*rate;
-   add(e,e.kmModus==="pauschal"?"Fahrtkosten-Pauschale":"Fahrtkosten ("+format(km)+" km)",wert,!!e.kmBezahlt);
+ if(state.paymentLadezustand!=="bereit")throw new Error("Zahlungshistorie noch nicht geladen. Bitte erneut versuchen.");
+ const dates=new Set(daten.map(e=>e.datum));
+ const positionen=state.paymentPositionen.filter(p=>dates.has(p.datum)&&Number.isFinite(p.gesamtCent));
+ const off=positionen.filter(p=>p.offenCent>0).map(p=>[p.datum,p.label,p.offenCent/100]);
+ const reversed=new Set(state.paymentJournal.filter(p=>p.stornoVon).map(p=>p.stornoVon));
+ const paid=[];
+ for(const z of state.paymentJournal){
+  if(z.stornoVon||reversed.has(z.id))continue;
+  for(const item of z.positionen||[]){
+   if(dates.has(item.datum))paid.push([item.datum,item.label||item.art,item.betragCent/100]);
   }
-  for(const x of e.sonderleistungen||[])add(e,"Sonderleistung: "+x.name,sonderBetragAktuell(x,e.datum),!!x.bezahlt);
  }
- return '<div class="zahlungen-grid">'+listen.map((items,i)=>'<section class="zahlungen"><h2>'+(i?"Bereits bezahlt":"Noch offen")+'</h2><table><thead><tr><th>Datum</th><th>Leistung</th><th>Betrag</th></tr></thead><tbody>'+items.map(a=>'<tr><td>'+htmlSicher(a[0])+'</td><td>'+htmlSicher(a[1])+'</td><td>'+htmlSicher(euro(a[2]))+'</td></tr>').join("")+'</tbody></table></section>').join("")+'</div>';
+ const rows=items=>items.map(a=>'<tr><td>'+htmlSicher(String(a[0]).split("-").reverse().join("."))+'</td><td>'+htmlSicher(a[1])+'</td><td>'+htmlSicher(euro(a[2]))+'</td></tr>').join("");
+ return '<div class="zahlungen-grid">'+[[off,"Noch offen"],[paid,"Bereits bezahlt (laut Zahlungshistorie)"]].map(([items,title])=>'<section class="zahlungen"><h2>'+title+'</h2><table><thead><tr><th>Datum</th><th>Leistung</th><th>Betrag</th></tr></thead><tbody>'+rows(items)+'</tbody></table></section>').join("")+'</div>';
 }
+function exportZahlungenPdf(){
+ try{
+  if(state.paymentLadezustand!=="bereit")throw new Error("Zahlungshistorie noch nicht geladen.");
+  const x=exportKontext(),dates=new Set(x.daten.map(e=>e.datum));
+  const reversed=new Set(state.paymentJournal.filter(p=>p.stornoVon).map(p=>p.stornoVon));
+  const zahlungen=state.paymentJournal.filter(z=>!z.stornoVon&&!reversed.has(z.id)&&Number(z.betrag)>0).map(z=>({
+   ...z,positionen:(z.positionen||[]).filter(p=>dates.has(p.datum))
+  })).filter(z=>z.positionen.length).sort((a,b)=>String(a.datum).localeCompare(String(b.datum)));
+  const euroSafe=n=>htmlSicher(euro(n));
+  const datumSafe=d=>htmlSicher(String(d||"").split("-").reverse().join("."));
+  const betragSumme=zahlungen.reduce((n,z)=>n+z.positionen.reduce((a,p)=>a+Number(p.betragCent||0),0),0)/100;
+  const zeilen=zahlungen.map(z=>{
+   const zugeordnet=z.positionen.reduce((n,p)=>n+Number(p.betragCent||0),0)/100;
+   const positionen=z.positionen.map(p=>'<tr class="detail"><td>'+datumSafe(p.datum)+'</td><td>'+htmlSicher(p.label||p.art||"Leistung")+'</td><td class="betrag">'+euroSafe(Number(p.betragCent||0)/100)+'</td></tr>').join("");
+   return '<tbody class="buchung"><tr class="payment"><td>'+datumSafe(z.datum)+'</td><td><strong>Zahlungseingang</strong>'+(Math.abs(zugeordnet-Number(z.betrag))>.009?' <small>(Anteil im gewählten Zeitraum)</small>':'')+'</td><td class="betrag"><strong>'+euroSafe(zugeordnet)+'</strong></td></tr>'+positionen+'</tbody>';
+  }).join("");
+  const fenster=window.open("","_blank");if(!fenster)throw new Error("PDF-Fenster konnte nicht geöffnet werden.");
+  fenster.document.open();
+  fenster.document.write('<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Zahlungshistorie</title><style>@page{size:A4 portrait;margin:14mm}body{font-family:Arial,sans-serif;color:#222;font-size:11px}h1{font-size:20px;margin:0 0 5px}.meta{color:#666;margin-bottom:18px}.total{font-size:15px;margin-bottom:18px;padding:10px;background:#f2f7ee;border:1px solid #d2e1c9;border-radius:6px}table{width:100%;border-collapse:collapse}th{text-align:left;background:#eef3f7;padding:8px 6px}td{padding:6px;border-bottom:1px solid #eee;vertical-align:top}.betrag{text-align:right;white-space:nowrap}.payment td{background:#f5f7f8;border-top:2px solid #cdd7dc}.detail td{font-size:10px;color:#555;padding-left:14px}.buchung{break-inside:avoid;page-break-inside:avoid}small{color:#777}thead{display:table-header-group}</style></head><body><h1>Zahlungshistorie – '+htmlSicher(x.titel)+'</h1><div class="meta">Nur gültige Zahlungseingänge · erstellt am '+htmlSicher(new Date().toLocaleDateString("de-DE"))+'</div><div class="total">Im Zeitraum zugeordnet: <strong>'+euroSafe(betragSumme)+'</strong></div>'+(zahlungen.length?'<table><thead><tr><th>Datum</th><th>Zahlung / Zuordnung</th><th class="betrag">Betrag</th></tr></thead>'+zeilen+'</table>':'<p>Keine gültigen Zahlungen im gewählten Zeitraum.</p>')+'<script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));</script></body></html>');
+  fenster.document.close();
+ }catch(e){zeige("Zahlungshistorie-PDF: "+e.message,"error");}
+}
+function pdfZahlungsWerte(daten){
+ if(state.paymentLadezustand!=="bereit")throw new Error("Zahlungsübersicht noch nicht geladen.");
+ const dates=new Set(daten.map(e=>e.datum));
+ const positionen=state.paymentPositionen.filter(p=>dates.has(p.datum)&&Number.isFinite(p.gesamtCent));
+ return {gesamt:positionen.reduce((s,p)=>s+p.gesamtCent,0)/100,bezahlt:positionen.reduce((s,p)=>s+p.bezahltCent,0)/100,offen:positionen.reduce((s,p)=>s+p.offenCent,0)/100};
+}
+function leistungsWerte(daten){
+ const map=new Map(daten.map(e=>[e.datum,e]));
+ const buckets={stunden:{gesamt:0,bezahlt:0,offen:0,menge:0,mengeBezahlt:0,mengeOffen:0},km:{gesamt:0,bezahlt:0,offen:0,menge:0,mengeBezahlt:0,mengeOffen:0},sonder:{gesamt:0,bezahlt:0,offen:0}};
+ for(const p of state.paymentPositionen){
+  const e=map.get(p.datum);if(!e||!Number.isFinite(p.gesamtCent))continue;
+  const typ=p.art==="stunden"?"stunden":p.art==="sonder"?"sonder":(p.art==="fahrt"||p.art==="km")?"km":null;
+  if(!typ)continue;
+  const bucket=buckets[typ];bucket.gesamt+=p.gesamtCent;bucket.bezahlt+=p.bezahltCent;bucket.offen+=p.offenCent;
+  if(typ==="sonder")continue;
+  const menge=typ==="stunden"?Number(e.stunden||0):p.art==="fahrt"?Number((e.fahrten||[]).find(f=>String(f.id)===String(p.id))?.kilometer||0):Number(e.kilometer||0);
+  if(!Number.isFinite(menge)||menge<0)continue;
+  bucket.menge+=menge;
+  if(p.gesamtCent>0){
+   bucket.mengeBezahlt+=menge*p.bezahltCent/p.gesamtCent;
+   bucket.mengeOffen+=menge*p.offenCent/p.gesamtCent;
+  }else{bucket.mengeOffen+=menge;}
+ }
+ return buckets;
+}
+function pdfLeistungsUebersicht(daten){
+ const b=leistungsWerte(daten);
+ const wert=(v,art)=>art==="sonder"?euro(v.gesamt/100):format(v.menge)+" "+(art==="stunden"?"h":"km")+" / "+euro(v.gesamt/100);
+ const anteil=(v,art,bezahlt)=>art==="sonder"?euro((bezahlt?v.bezahlt:v.offen)/100):format(bezahlt?v.mengeBezahlt:v.mengeOffen)+" "+(art==="stunden"?"h":"km")+" / "+euro((bezahlt?v.bezahlt:v.offen)/100);
+ const rows=[["Arbeitsstunden","stunden"],["Kilometer","km"],["Sonderleistungen","sonder"]];
+ return '<div class="leistungs-summary"><div class="leistungs-title">Leistungsübersicht</div><div class="leistungs-grid"><span>Leistung</span><span>Gesamt</span><span>Bezahlt</span><span>Noch offen</span>'+
+ rows.map(([name,art])=>'<span>'+htmlSicher(name)+'</span><span>'+htmlSicher(wert(b[art],art))+'</span><span>'+htmlSicher(anteil(b[art],art,true))+'</span><span>'+htmlSicher(anteil(b[art],art,false))+'</span>').join("")+'</div></div>';
+}
+
+function pdfTagWerte(datum){
+ const pos=state.paymentPositionen.filter(p=>p.datum===datum&&Number.isFinite(p.gesamtCent));
+ return {gesamt:pos.reduce((s,p)=>s+p.gesamtCent,0)/100,bezahlt:pos.reduce((s,p)=>s+p.bezahltCent,0)/100,offen:pos.reduce((s,p)=>s+p.offenCent,0)/100};
+}
+
 function exportPdf(){
   try{
-    const x=exportKontext(),zeilen=x.daten.map(exportZeile),fenster=window.open("","_blank");if(!fenster)throw new Error("PDF-Fenster konnte nicht geöffnet werden.");
+    const x=exportKontext(),zeilen=x.daten.map(exportZeile),pdfGeld=pdfZahlungsWerte(x.daten),fenster=window.open("","_blank");if(!fenster)throw new Error("PDF-Fenster konnte nicht geöffnet werden.");
     const body=zeilen.map(z=>{
       const original=x.daten.find(e=>e.datum===z.datum.toLocaleDateString("sv-SE"));
+      const tagGeld=pdfTagWerte(original?.datum||"");
       const zeit=(a,b)=>a&&b?htmlSicher(a+" – "+b):"–";
       const dienste='<div><strong>1. Dienst:</strong> '+zeit(z.beginn,z.ende)+'</div>'+(z.beginn2||z.ende2?'<div><strong>2. Dienst:</strong> '+zeit(z.beginn2,z.ende2)+'</div>':'');
       const lohn=original&&original.bezahlt&&original.stundenFix!=null&&z.stunden>0?Number(original.stundenFix)/z.stunden:lohnFuerDatum(original?.datum||"");
       const kmSatz=original?(original.kmBezahlt&&original.kmFix!=null&&Number(original.kilometer)>0?Number(original.kmFix)/Number(original.kilometer):kilometerSatzFuerDatum(original.datum)):null;
       const stundenText=z.art==="Arbeit"&&z.stunden>0?(lohn==null?"–":euro(lohn)+" / h"):"–";
       const kmText=original&&original.kmModus==="pauschal"?"Pauschale: "+euro(Number(original.kmPauschal||0)):kmSatz==null?"–":euro(kmSatz)+" / km";
-      return `<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td class="dienst">${dienste}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td class="num">${htmlSicher(stundenText)}</td><td class="ziel">${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td class="num">${htmlSicher(kmText)}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td><td>${htmlSicher(z.sonderleistungen.map(x=>x.name).join(" · "))}</td><td class="num">${htmlSicher(euro(z.sonder))}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.gesamt)):"–"}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.bezahlt)):"–"}</td><td class="num">${z.geld.bekannt?htmlSicher(euro(z.geld.offen)):"–"}</td></tr>`;
+      return `<tr><td>${htmlSicher(z.datumText)}</td><td>${htmlSicher(z.wochentag)}</td><td class="dienst">${dienste}</td><td class="num">${htmlSicher(format(z.stunden))}</td><td class="num">${htmlSicher(stundenText)}</td><td class="ziel">${htmlSicher(z.fahrziel)}</td><td class="num">${htmlSicher(format(z.kilometer))}</td><td class="num">${htmlSicher(kmText)}</td><td>${z.art==="Arbeit"?(z.bezahlt?"Ja":"Nein"):""}</td><td>${htmlSicher(z.sonderleistungen.map(x=>x.name).join(" · "))}</td><td class="num">${htmlSicher(euro(z.sonder))}</td><td class="num">${htmlSicher(euro(tagGeld.gesamt))}</td><td class="num">${htmlSicher(euro(tagGeld.bezahlt))}</td><td class="num">${htmlSicher(euro(tagGeld.offen))}</td></tr>`;
     }).join("");
-    fenster.document.open();fenster.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Arbeitszeit & Fahrten</title><style>@page{size:A4 landscape;margin:11mm}body{font-family:Arial,sans-serif;color:#222;margin:0}h1{font-size:20px;margin:0 0 4px}.meta{font-size:11px;color:#666;margin-bottom:12px}.summary{display:flex;gap:10px;margin:0 0 14px}.summary div{border:1px solid #ccd3d9;border-radius:8px;padding:7px 10px;min-width:160px}.summary span{display:block;font-size:10px;color:#666}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}th,td{border-bottom:1px solid #d6d6d6;padding:4px 2px;vertical-align:top;text-align:center}th{font-size:7.5px}th{background:#eef3f7}th:nth-child(3),td:nth-child(3){width:15%}th:nth-child(4),td:nth-child(4){width:2.5%}th:nth-child(6),td:nth-child(6){width:18%}.dienst{text-align:left;line-height:1.6}.ziel{overflow-wrap:anywhere}.num{white-space:nowrap}.sum-row{background:#eef3f7;border-top:2px solid #aab5c0;font-size:9px}.sum-row td{padding:7px 2px}.zahlungen-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:16px}.zahlungen{min-width:0;margin-top:0}.zahlungen h2{font-size:12px}.zahlungen table{table-layout:auto}.zahlungen th,.zahlungen td{text-align:left}.zahlungen td:last-child{text-align:right}.footer{margin-top:10px;font-size:9px;color:#777}</style></head><body><h1>Arbeitszeit & Fahrten – ${htmlSicher(x.titel)}</h1><div class="meta">Erstellt am ${htmlSicher(new Date().toLocaleDateString("de-DE"))}</div><div class="summary"><div><span>Gesamtbetrag</span><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.gesamt)):"–"}</strong></div><div><span>Bezahlt</span><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.bezahlt)):"–"}</strong></div><div><span>Offen</span><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.offen)):"–"}</strong></div><div><span>Stunden gesamt</span><strong>${htmlSicher(format(x.stunden))} h</strong></div><div><span>Kilometer gesamt</span><strong>${htmlSicher(format(x.km))} km</strong></div></div><table><thead><tr><th>Datum</th><th>Tag</th><th>Dienste</th><th>Stunden</th><th>Stundenlohn</th><th>Fahrziel</th><th>km</th><th>km-Satz</th><th>Bezahlt</th><th>Sonderleistungen</th><th>Pauschalen</th><th>Gesamt €</th><th>Bezahlt €</th><th>Offen €</th></tr></thead><tbody>${body}</tbody><tfoot><tr class="sum-row"><td colspan="11" style="text-align:right"><strong>Summe</strong></td><td class="num"><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.gesamt)):"–"}</strong></td><td class="num"><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.bezahlt)):"–"}</strong></td><td class="num"><strong>${x.geld.bekannt?htmlSicher(euro(x.geld.offen)):"–"}</strong></td></tr></tfoot></table>${pdfZahlungen(x.daten)}<div class="footer">Arbeitszeit & Fahrten</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));<\/script></body></html>`);fenster.document.close();
+    fenster.document.open();fenster.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Arbeitszeit & Fahrten</title><style>@page{size:A4 landscape;margin:9mm}body{font-family:Arial,sans-serif;color:#222;margin:0}h1{font-size:20px;margin:0 0 4px}.meta{font-size:10px;color:#666;margin-bottom:9px}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 9px}.summary div{border:1px solid #d7dce0;border-radius:6px;padding:7px 10px;min-width:0}.summary span{display:block;font-size:10px;color:#666}.summary strong{font-size:16px}.summary-main{background:#f2f7ee;border-color:#a9c498!important}.summary-main strong{font-size:22px}.leistungs-summary{margin:0 0 15mm;padding:3px 0 6px;border-bottom:1px solid #dce2e6}.leistungs-title{font-weight:bold;font-size:10px;margin-bottom:5px}.leistungs-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr;gap:3px 10px;font-size:9px}.leistungs-grid span:nth-child(-n+4){font-weight:bold;color:#666;border-bottom:1px solid #e7e9eb;padding-bottom:3px}.leistungs-grid span:nth-child(4n+3){text-align:right}table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}th,td{border-bottom:1px solid #d6d6d6;padding:3px 2px;vertical-align:top;text-align:center}th{font-size:7.5px}th{background:#eef3f7}th:nth-child(3),td:nth-child(3){width:15%}th:nth-child(4),td:nth-child(4){width:2.5%}th:nth-child(6),td:nth-child(6){width:18%}.dienst{text-align:left;line-height:1.6}.ziel{overflow-wrap:anywhere}.num{white-space:nowrap}.sum-row{background:#eef3f7;border-top:2px solid #aab5c0;font-size:9px}.sum-row td{padding:7px 2px}.zahlungen-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;margin-top:10px}.zahlungen{min-width:0;margin-top:0}.zahlungen h2{font-size:11px;margin:6px 0}.zahlungen table{table-layout:auto}.zahlungen th,.zahlungen td{text-align:left}.zahlungen td:last-child{text-align:right}.footer{margin-top:12px;font-size:8px;color:#777}</style></head><body><h1>Tätigkeitsnachweis inkl. erhaltener Zahlungen – ${htmlSicher(x.titel)}</h1><div class="meta">Erstellt am ${htmlSicher(new Date().toLocaleDateString("de-DE"))}</div><div class="summary"><div class="summary-main"><span>Noch offen</span><strong>${htmlSicher(euro(pdfGeld.offen))}</strong></div><div><span>Bereits bezahlt</span><strong>${htmlSicher(euro(pdfGeld.bezahlt))}</strong></div><div><span>Gesamtbetrag</span><strong>${htmlSicher(euro(pdfGeld.gesamt))}</strong></div></div>${pdfLeistungsUebersicht(x.daten)}<table><thead><tr><th>Datum</th><th>Tag</th><th>Dienste</th><th>Stunden</th><th>Stundenlohn</th><th>Fahrziel</th><th>km</th><th>km-Satz</th><th>Bezahlt</th><th>Sonderleistungen</th><th>Pauschalen</th><th>Gesamt €</th><th>Bezahlt €</th><th>Offen €</th></tr></thead><tbody>${body}</tbody><tfoot><tr class="sum-row"><td colspan="11" style="text-align:right"><strong>Summe</strong></td><td class="num"><strong>${htmlSicher(euro(pdfGeld.gesamt))}</strong></td><td class="num"><strong>${htmlSicher(euro(pdfGeld.bezahlt))}</strong></td><td class="num"><strong>${htmlSicher(euro(pdfGeld.offen))}</strong></td></tr></tfoot></table><div class="footer">Arbeitszeit & Fahrten</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));<\/script></body></html>`);fenster.document.close();
   }catch(e){zeige("PDF-Export: "+e.message,"error")}
 }
 
@@ -1135,8 +1216,7 @@ function zahlungsKandidaten(){
  return state.paymentPositionen.filter(p=>p.offenCent>0&&p.gesamtCent!==null&&!p.altBezahlt);
 }
 function zahlungsVorschlag(cents){
- // FIFO: alle offenen Positionen chronologisch berücksichtigen, auch Centbeträge.
- // Keine exakte Kombinationssuche, die ältere offene Leistungen überspringt.
+ // FIFO: offene Positionen vom ältesten Leistungsdatum aus zuordnen.
  const candidates=zahlungsKandidaten().sort((a,b)=>
   a.datum.localeCompare(b.datum)||
   String(a.art).localeCompare(String(b.art))||
