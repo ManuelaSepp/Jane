@@ -171,8 +171,8 @@ details.mobile-optional{border:1px solid #d6dfd9;border-radius:10px;padding:10px
 </main>
 <div id="calendarTooltip" class="calendar-tooltip" role="tooltip"></div>
 <script src="config.js?v=zahlungen-test-readonly-2"></script>
-<script src="app.js?v=fifo-test-no-duplicates-20261020-3"></script>
+<script src="app.js?v=update-test-20261020-1"></script>
 <script async src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
-<script>document.querySelectorAll("details").forEach(el=>el.open=false);</script></body>
+<script>document.querySelectorAll("details").forEach(el=>el.open=false);</script><script>if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});}</script></body>
 </html>
