@@ -610,8 +610,14 @@ function renderKalender(){
     b.innerHTML=`<span class="day-number">${t}</span><span class="status-label">${label}</span>${bezahltBadge}`;
     if(e){
       const tt=tooltipFuerEintrag(e)+(zahlung?"\n"+zahlung.details:"");
-      b.title=tt.replace(/\n/g," | ");
-      b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tt)});
+      const werte=kalenderZahlungsLadezustand()==="bereit"?leistungsWerte([e]):null;
+      const hover=werte?"\nZahlungsübersicht (Gesamt | Bezahlt | Offen):"+[["Arbeitsstunden","stunden","h"],["Kilometer","km","km"],["Sonderleistungen","sonder",""]].map(([name,art,einheit])=>{
+        const v=werte[art],f=(m,c)=>einheit?format(m)+" "+einheit+" / "+euro(c/100):euro(c/100);
+        return "\n"+name+": "+f(v.menge,v.gesamt)+" | "+f(v.mengeBezahlt,v.bezahlt)+" | "+f(v.mengeOffen,v.offen);
+      }).join(""):"";
+      const tooltipText=tt+hover;
+      b.title=tooltipText.replace(/\n/g," | ");
+      b.addEventListener("mouseenter",ev=>{if(state.tooltipBlockDatum===i)return;tooltipZeigen(ev.currentTarget,tooltipText)});
       b.addEventListener("mousemove",ev=>{if(state.tooltipBlockDatum===i)return;tooltipPositionieren(ev.clientX,ev.clientY)});
       b.addEventListener("mouseleave",()=>{if(state.tooltipBlockDatum===i)state.tooltipBlockDatum=null;tooltipAusblenden()});
     }
@@ -1020,25 +1026,32 @@ function pdfZahlungsWerte(daten){
  const positionen=state.paymentPositionen.filter(p=>dates.has(p.datum)&&Number.isFinite(p.gesamtCent));
  return {gesamt:positionen.reduce((s,p)=>s+p.gesamtCent,0)/100,bezahlt:positionen.reduce((s,p)=>s+p.bezahltCent,0)/100,offen:positionen.reduce((s,p)=>s+p.offenCent,0)/100};
 }
-function pdfLeistungsUebersicht(daten){
- const dates=new Set(daten.map(e=>e.datum));
- const positionen=state.paymentPositionen.filter(p=>dates.has(p.datum)&&Number.isFinite(p.gesamtCent));
- const buckets={stunden:{gesamt:0,bezahlt:0,offen:0},km:{gesamt:0,bezahlt:0,offen:0},sonder:{gesamt:0,bezahlt:0,offen:0}};
- for(const p of positionen){
+function leistungsWerte(daten){
+ const map=new Map(daten.map(e=>[e.datum,e]));
+ const buckets={stunden:{gesamt:0,bezahlt:0,offen:0,menge:0,mengeBezahlt:0,mengeOffen:0},km:{gesamt:0,bezahlt:0,offen:0,menge:0,mengeBezahlt:0,mengeOffen:0},sonder:{gesamt:0,bezahlt:0,offen:0}};
+ for(const p of state.paymentPositionen){
+  const e=map.get(p.datum);if(!e||!Number.isFinite(p.gesamtCent))continue;
   const typ=p.art==="stunden"?"stunden":p.art==="sonder"?"sonder":(p.art==="fahrt"||p.art==="km")?"km":null;
   if(!typ)continue;
-  buckets[typ].gesamt+=p.gesamtCent;
-  buckets[typ].bezahlt+=p.bezahltCent;
-  buckets[typ].offen+=p.offenCent;
+  const bucket=buckets[typ];bucket.gesamt+=p.gesamtCent;bucket.bezahlt+=p.bezahltCent;bucket.offen+=p.offenCent;
+  if(typ==="sonder")continue;
+  const menge=typ==="stunden"?Number(e.stunden||0):p.art==="fahrt"?Number((e.fahrten||[]).find(f=>String(f.id)===String(p.id))?.kilometer||0):Number(e.kilometer||0);
+  if(!Number.isFinite(menge)||menge<0)continue;
+  bucket.menge+=menge;
+  if(p.gesamtCent>0){
+   bucket.mengeBezahlt+=menge*p.bezahltCent/p.gesamtCent;
+   bucket.mengeOffen+=menge*p.offenCent/p.gesamtCent;
+  }else{bucket.mengeOffen+=menge;}
  }
- const status=b=>b.gesamt===0?"–":b.offen===0?"Komplett bezahlt":b.bezahlt===0?"Noch offen":"Teilweise bezahlt";
- const rows=[
-  ["Arbeitsstunden",format(daten.reduce((n,e)=>n+Number(e.stunden||0),0))+" h",buckets.stunden],
-  ["Kilometer",format(daten.reduce((n,e)=>n+Number(e.kilometer||0),0))+" km",buckets.km],
-  ["Sonderleistungen",euro(buckets.sonder.gesamt/100),buckets.sonder]
- ];
- return '<div class="leistungs-summary"><div class="leistungs-title">Leistungsübersicht</div><div class="leistungs-grid"><span>Leistung</span><span>Geleistet / Gesamt</span><span>Davon bezahlt</span><span>Status</span>'+
- rows.map(([name,gesamt,b])=>'<span>'+htmlSicher(name)+'</span><span>'+htmlSicher(gesamt)+'</span><span>'+htmlSicher(euro(b.bezahlt/100))+'</span><span>'+htmlSicher(status(b))+'</span>').join("")+'</div></div>';
+ return buckets;
+}
+function pdfLeistungsUebersicht(daten){
+ const b=leistungsWerte(daten);
+ const wert=(v,art)=>art==="sonder"?euro(v.gesamt/100):format(v.menge)+" "+(art==="stunden"?"h":"km")+" / "+euro(v.gesamt/100);
+ const anteil=(v,art,bezahlt)=>art==="sonder"?euro((bezahlt?v.bezahlt:v.offen)/100):format(bezahlt?v.mengeBezahlt:v.mengeOffen)+" "+(art==="stunden"?"h":"km")+" / "+euro((bezahlt?v.bezahlt:v.offen)/100);
+ const rows=[["Arbeitsstunden","stunden"],["Kilometer","km"],["Sonderleistungen","sonder"]];
+ return '<div class="leistungs-summary"><div class="leistungs-title">Leistungsübersicht</div><div class="leistungs-grid"><span>Leistung</span><span>Gesamt</span><span>Bezahlt</span><span>Noch offen</span>'+
+ rows.map(([name,art])=>'<span>'+htmlSicher(name)+'</span><span>'+htmlSicher(wert(b[art],art))+'</span><span>'+htmlSicher(anteil(b[art],art,true))+'</span><span>'+htmlSicher(anteil(b[art],art,false))+'</span>').join("")+'</div></div>';
 }
 
 function pdfTagWerte(datum){
