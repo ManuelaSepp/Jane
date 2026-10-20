@@ -1135,39 +1135,20 @@ function zahlungsKandidaten(){
  return state.paymentPositionen.filter(p=>p.offenCent>0&&p.gesamtCent!==null&&!p.altBezahlt);
 }
 function zahlungsVorschlag(cents){
- const candidates=zahlungsKandidaten().sort((a,b)=>a.datum.localeCompare(b.datum)||b.offenCent-a.offenCent);
- // Exakte Kombination aus bis zu vier vollständig offenen Positionen bevorzugen.
- // Suche ist absichtlich begrenzt, damit die Oberfläche auch bei vielen Einträgen reagiert.
- const eligible=candidates.filter(p=>p.offenCent<=cents).slice(0,90);
- const byAmount=new Map();
- for(let i=0;i<eligible.length;i++){
-  const amount=eligible[i].offenCent;
-  if(!byAmount.has(amount))byAmount.set(amount,i);
+ // FIFO: alle offenen Positionen chronologisch berücksichtigen, auch Centbeträge.
+ // Keine exakte Kombinationssuche, die ältere offene Leistungen überspringt.
+ const candidates=zahlungsKandidaten().sort((a,b)=>
+  a.datum.localeCompare(b.datum)||
+  String(a.art).localeCompare(String(b.art))||
+  String(a.id||"").localeCompare(String(b.id||""))
+ );
+ let rest=cents;
+ const result=[];
+ for(const p of candidates){
+  if(rest<=0)break;
+  const cent=Math.min(rest,p.offenCent);
+  if(cent>0){result.push({p,cent});rest-=cent;}
  }
- for(let i=0;i<eligible.length;i++){
-  const p=eligible[i],rest=cents-p.offenCent;
-  if(rest===0)return [{p,cent:p.offenCent}];
-  const j=byAmount.get(rest);
-  if(j!==undefined&&j!==i)return [i,j].map(k=>({p:eligible[k],cent:eligible[k].offenCent}));
- }
- const pairs=new Map();
- for(let i=0;i<eligible.length;i++)for(let j=i+1;j<eligible.length;j++){
-  const sum=eligible[i].offenCent+eligible[j].offenCent;
-  if(sum<cents&&!pairs.has(sum))pairs.set(sum,[i,j]);
-  if(sum===cents)return [i,j].map(k=>({p:eligible[k],cent:eligible[k].offenCent}));
- }
- for(let k=0;k<eligible.length;k++){
-  const pair=pairs.get(cents-eligible[k].offenCent);
-  if(pair&&pair[0]!==k&&pair[1]!==k)return [...pair,k].map(i=>({p:eligible[i],cent:eligible[i].offenCent}));
- }
- // Vierer-Kombinationen: alle Paare vergleichen, ohne Position doppelt zu verwenden.
- for(const [sum,pair] of pairs){
-  const other=pairs.get(cents-sum);
-  if(other&&pair.every(i=>!other.includes(i)))return [...pair,...other].map(i=>({p:eligible[i],cent:eligible[i].offenCent}));
- }
- // Wenn keine exakte Kombination gefunden wurde, Betrag chronologisch teilweise zuordnen.
- let rest=cents,result=[];
- for(const p of candidates){if(rest<=0)break;const cent=Math.min(rest,p.offenCent);result.push({p,cent});rest-=cent;}
  return rest===0?result:[];
 }
 function renderZahlungsAuswahl(){
