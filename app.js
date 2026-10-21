@@ -1079,13 +1079,14 @@ function pdfMonatsUebersicht(daten){
   const stunden=tage.reduce((sum,e)=>sum+Number(e.stunden||0),0);
   const km=tage.reduce((sum,e)=>sum+Number(e.kilometer||0),0);
   const name=new Date(Number(monat.slice(0,4)),Number(monat.slice(5,7))-1,1).toLocaleDateString("de-DE",{month:"long"});
-  return '<tr><td>'+htmlSicher(name)+'</td><td>'+htmlSicher(format(stunden))+' h</td><td>'+htmlSicher(format(km))+' km</td><td>'+htmlSicher(euro(geld.bezahlt))+'</td><td></td><td>'+htmlSicher(euro(geld.offen))+'</td></tr>';
+  return '<tr><td>'+htmlSicher(name)+'</td><td>'+htmlSicher(format(stunden))+' h</td><td>'+htmlSicher(euro(geld.gesamt))+'</td><td>'+htmlSicher(format(km))+' km</td><td>'+htmlSicher(euro(geld.bezahlt))+'</td><td></td><td>'+htmlSicher(euro(geld.offen))+'</td></tr>';
  }).join("");
  const geld=pdfZahlungsWerte(daten);
  const stunden=daten.reduce((sum,e)=>sum+Number(e.stunden||0),0);
  const km=daten.reduce((sum,e)=>sum+Number(e.kilometer||0),0);
- return '<section class="pdf-monate"><h2>Monatsübersicht</h2><table class="monats-tabelle"><colgroup><col style="width:22%"><col span="6" style="width:13%"></colgroup><thead><tr><th>Monat</th><th>Stunden</th><th>Gesamt €</th><th>Kilometer</th><th>Bezahlt €</th><th></th><th>Offen €</th></tr></thead><tbody>'+zeilen+'</tbody><tfoot><tr><td>Jahr gesamt</td><td>'+htmlSicher(format(stunden))+' h</td><td>'+htmlSicher(format(km))+' km</td><td>'+htmlSicher(euro(geld.bezahlt))+'</td><td></td><td>'+htmlSicher(euro(geld.offen))+'</td></tr></tfoot></table></section>';
+ return '<section class="pdf-monate"><h2>Monatsübersicht</h2><table class="monats-tabelle"><colgroup><col style="width:22%"><col span="6" style="width:13%"></colgroup><thead><tr><th>Monat</th><th>Stunden</th><th>Gesamt €</th><th>Kilometer</th><th>Bezahlt €</th><th></th><th>Offen €</th></tr></thead><tbody>'+zeilen+'</tbody><tfoot><tr><td>Jahr gesamt</td><td>'+htmlSicher(format(stunden))+' h</td><td>'+htmlSicher(euro(geld.gesamt))+'</td><td>'+htmlSicher(format(km))+' km</td><td>'+htmlSicher(euro(geld.bezahlt))+'</td><td></td><td>'+htmlSicher(euro(geld.offen))+'</td></tr></tfoot></table></section>';
 }
+
 function pdfTagWerte(datum){
  const pos=state.paymentPositionen.filter(p=>p.datum===datum&&Number.isFinite(p.gesamtCent));
  return {gesamt:pos.reduce((s,p)=>s+p.gesamtCent,0)/100,bezahlt:pos.reduce((s,p)=>s+p.bezahltCent,0)/100,offen:pos.reduce((s,p)=>s+p.offenCent,0)/100};
