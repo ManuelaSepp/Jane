@@ -1,5 +1,5 @@
-const CACHE_NAME="jane-live-v1-1-25";
-const APP_ASSETS=["./","./index.html","./config.js?v=3.0","./app.js?v=live-1-1-25","./manifest.json","./icons/favicon-32.png","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png"];
+const CACHE_NAME="jane-live-v1-1-26";
+const APP_ASSETS=["./","./index.html","./config.js?v=3.0","./app.js?v=live-1-1-26","./manifest.json","./icons/favicon-32.png","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png"];
 self.addEventListener("install",event=>{
  event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_ASSETS)));
  self.skipWaiting();

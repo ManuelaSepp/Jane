@@ -708,6 +708,7 @@ function zahlungBearbeitenStart(){
   $("zahlungAktionen").classList.add("hidden");
   $("zahlungBearbeiten").classList.remove("hidden");
   const journal=$("zahlungenKarte");
+  journal.classList.remove("hidden");
   journal.open=true;
   journal.scrollIntoView({behavior:"smooth",block:"start"});
 }
@@ -1357,5 +1358,6 @@ $("zahlungDatumNeu").value=iso(new Date());
 $("zahlungSuchenNeu").onclick=zahlungSuchenNeu;
 $("zahlungHinzufuegenNeu").onclick=zahlungHinzufuegenNeu;
 $("zahlungBuchenNeu").onclick=zahlungBuchenNeu;
+$("zahlungSchliessenNeu").onclick=()=>{const k=$("zahlungenKarte");k.open=false;k.classList.add("hidden");$("calendarGrid").scrollIntoView({behavior:"smooth",block:"start"});};
 $("zahlungBetragNeu").oninput=()=>{state.paymentEntwurf=[];renderZahlungsEntwurf()};
 $("zahlungDatumNeu").onchange=renderZahlungsEntwurf;
