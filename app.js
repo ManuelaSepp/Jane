@@ -458,6 +458,10 @@ async function aktion(action,payload){
     resetForm(false);
     renderAlles();
     speichereLokalenCache(state.kalenderDatum.getFullYear());
+    // Nach jeder bestätigten Änderung Jahresdaten UND Zahlungspositionen neu einlesen.
+    // Sonst fehlen neue Arbeitsstunden/Fahrten in den PDF-Geldbeträgen.
+    const jahresdaten=ladeJahr(state.kalenderDatum.getFullYear(),true);
+    await zahlungenLaden(jahresdaten);
     zeige(action==="delete"?"Eintrag gelöscht ✅":action==="update"?"Änderung gespeichert ✅":"Gespeichert ✅","success");
   }catch(e){
     zeige("Fehler beim Senden: "+e.message,"error");
