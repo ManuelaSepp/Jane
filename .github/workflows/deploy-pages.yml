@@ -11,7 +11,26 @@ concurrency:
   group: pages
   cancel-in-progress: false
 jobs:
+  tests:
+    # Veröffentlichung nur, wenn alle Prüfungen bestanden sind.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Zahlungs- und Zugangstests
+        run: node --test backend-payments.test.cjs payment-regression.test.cjs tools/payment-reset-plan.test.cjs
+      - name: Syntax App
+        run: node --check app.js && node --check service-worker.js
+      - name: Syntax Backend
+        run: node -e "new (require('node:vm').Script)(require('node:fs').readFileSync('backend/Code.gs','utf8'))"
+      - name: Versionen stimmen überein
+        run: |
+          v=$(grep -o 'app.js?v=[^"]*' index.html | head -1)
+          grep -q "./$v" service-worker.js || { echo "Skriptversion in index.html ($v) fehlt im Service Worker"; exit 1; }
   deploy:
+    needs: tests
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
