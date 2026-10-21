@@ -390,11 +390,12 @@ function setNavigation(x){$("prevMonth").disabled=x;$("nextMonth").disabled=x}
 async function schreiben(action,payload){
  if(action==="setLeistungBezahlt"||action==="setBezahlt")throw new Error("Alter Zahlungsstatus deaktiviert. Bitte das Zahlungsjournal verwenden.");
  const requestId="jane_"+Date.now()+"_"+Math.random().toString(36).slice(2);
- const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now())});
+ const body=new URLSearchParams({action,payload:JSON.stringify(payload),requestId,zeit:String(Date.now()),zugang:zugangLesen()});
  await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",body,cache:"no-store"});
  for(let i=0;i<30;i++){
   await new Promise(resolve=>setTimeout(resolve,900));
   const result=await jsonp({action:"writeStatus",requestId});
+  if(zugangVerweigert(result))throw new Error(result.message);
   if(result.done){if(!result.ok)throw new Error(result.message||"Speicherung fehlgeschlagen.");return;}
  }
  throw new Error("Keine Bestätigung vom Google Apps Script. Bitte Daten vor erneutem Speichern prüfen.");
@@ -1108,7 +1109,28 @@ function exportPdf(){
   }catch(e){zeige("PDF-Export: "+e.message,"error")}
 }
 
-function jsonp(p){
+// Als Funktion (nicht const), damit der Schlüssel schon beim App-Start lesbar ist.
+function ZUGANG_SPEICHER_NAME(){return "jane_zugang_v1"}
+function zugangLesen(){try{return localStorage.getItem(ZUGANG_SPEICHER_NAME())||""}catch(_){return ""}}
+function zugangAbfragen(text){
+ const k=window.prompt(text,"");
+ if(!k||!k.trim())return false;
+ try{localStorage.setItem(ZUGANG_SPEICHER_NAME(),k.trim())}catch(_){}
+ return true;
+}
+function zugangVerweigert(r){return !!(r&&r.ok===false&&r.zugang===false)}
+async function jsonp(p){
+ const gesendet=zugangLesen();
+ let r=await jsonpRoh({...p,zugang:gesendet});
+ // Parallele Anfrage hat inzwischen einen neuen Schlüssel gespeichert: ohne erneute Abfrage wiederholen.
+ if(zugangVerweigert(r)&&zugangLesen()!==gesendet)r=await jsonpRoh({...p,zugang:zugangLesen()});
+ if(zugangVerweigert(r)&&zugangAbfragen(zugangLesen()?"Der gespeicherte Zugangsschlüssel für Jane passt nicht. Bitte den richtigen Schlüssel eingeben:":"Bitte einmalig den Zugangsschlüssel für Jane eingeben:")){
+  r=await jsonpRoh({...p,zugang:zugangLesen()});
+ }
+ if(zugangVerweigert(r))return {ok:false,zugang:false,message:"Kein Zugriff: Zugangsschlüssel fehlt oder ist falsch. Bitte die Seite neu laden und den Schlüssel eingeben."};
+ return r;
+}
+function jsonpRoh(p){
   return new Promise((res,rej)=>{const cb="azFahrtenCallback_"+Date.now()+"_"+(++jsonpSequenz),s=document.createElement("script");const t=setTimeout(()=>{clean();rej(new Error("Zeitüberschreitung"))},45000);function clean(){clearTimeout(t);try{delete window[cb]}catch(_){window[cb]=undefined}s.remove()}window[cb]=d=>{clean();res(d)};s.src=SCRIPT_URL+"?"+new URLSearchParams({...p,callback:cb,zeit:Date.now()});s.onerror=()=>{clean();rej(new Error("Verbindung fehlgeschlagen"))};document.head.appendChild(s)});
 }
 function iso(d){return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}

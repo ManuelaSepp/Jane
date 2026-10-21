@@ -210,6 +210,28 @@ test('clean reset can be unpaused without changing any table data',()=>{
 
 test('releaseStatus read endpoint identifies the prepared code and exposes no raw spreadsheet ID',()=>{
  const f=releaseFixture();const text=f.ctx.doGet({parameter:{action:'releaseStatus',callback:'check'}}).text;
- const status=JSON.parse(text.slice(6,-2));assert.equal(status.backendRevision,'jane-zahlungsneustart-20261019-r3');
+ const status=JSON.parse(text.slice(6,-2));assert.equal(status.backendRevision,'jane-zugangsschutz-20261021-r1');assert.equal(status.zugangsschutz,false);
  assert.equal(status.writePaused,false);assert.equal(text.includes('synthetic-sheet'),false);
+});
+
+test('access key: once set, reads and writes without the correct key are refused and leave no trace',()=>{
+ const f=fixture(),props=f.ctx.PropertiesService.getScriptProperties();props.setProperty('JANE_ZUGANG','geheim-schluessel-123');
+ const get=(par)=>{const t=f.ctx.doGet({parameter:{callback:'cb',...par}}).text;return JSON.parse(t.slice(3,-2));};
+ for(const zugang of [undefined,'','falsch','geheim-schluessel-12','geheim-schluessel-1234']){
+  const r=get({action:'init',jahr:'2026',...(zugang===undefined?{}:{zugang})});
+  assert.equal(r.ok,false);assert.equal(r.zugang,false);assert.equal(r.eintraegeJahr,undefined);
+ }
+ assert.equal(get({action:'init',jahr:'2026',zugang:'geheim-schluessel-123'}).ok,true);
+ assert.equal(get({action:'paymentOverview'}).zugang,false);
+ const vorher=JSON.stringify(f.sheets);
+ const abgelehnt=JSON.parse(f.ctx.doPost({parameter:{action:'recordPayment',payload:JSON.stringify(f.payload()),requestId:'request_denied_1234'}}).text);
+ assert.equal(abgelehnt.ok,false);assert.equal(abgelehnt.zugang,false);assert.equal(JSON.stringify(f.sheets),vorher);
+ assert.equal(props.getProperty('jane_ack_request_denied_1234'),undefined);assert.equal(f.locks.acquired,0);
+ const ok=JSON.parse(f.ctx.doPost({parameter:{action:'recordPayment',payload:JSON.stringify(f.payload()),requestId:'request_allowed_123',zugang:'geheim-schluessel-123'}}).text);
+ assert.equal(ok.ok,true);
+});
+test('JSONP callback name is restricted to a plain identifier',()=>{
+ const f=fixture();
+ assert.ok(f.ctx.doGet({parameter:{action:'nichts',callback:'alert(1)//'}}).text.startsWith('callback('));
+ assert.ok(f.ctx.doGet({parameter:{action:'nichts',callback:'azFahrtenCallback_1_2'}}).text.startsWith('azFahrtenCallback_1_2('));
 });

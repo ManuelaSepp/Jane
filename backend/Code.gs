@@ -82,10 +82,13 @@ function setupArbeitszeitFahrtenSheet() {
 }
 function doGet(e) {
   const action = String((e && e.parameter && e.parameter.action) || 'init');
-  const callback = String((e && e.parameter && e.parameter.callback) || 'callback');
+  const callbackRoh = String((e && e.parameter && e.parameter.callback) || 'callback');
+  const callback = /^[A-Za-z_$][A-Za-z0-9_$]{0,100}$/.test(callbackRoh) ? callbackRoh : 'callback';
   let result;
   try {
-    if (action === 'releaseStatus') {
+    if (!janeZugangOk_(e)) {
+      result = { ok:false, zugang:false, message:'Kein Zugriff.' };
+    } else if (action === 'releaseStatus') {
       result = janeReleaseStatus_();
     } else if (action === 'paymentOverview') {
       result = paymentOverview_();
@@ -111,6 +114,11 @@ function doGet(e) {
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 function doPost(e) {
+  if (!janeZugangOk_(e)) {
+    // Ohne gültigen Schlüssel: nichts sperren, nichts schreiben, keine Quittung speichern.
+    return ContentService.createTextOutput(JSON.stringify({ok:false,zugang:false,message:'Kein Zugriff.'}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   let result;
   const lock=LockService.getScriptLock();
   let locked=false;
@@ -663,8 +671,34 @@ function janeBinding_(){
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,SpreadsheetApp.getActive().getId())
     .map(b=>('0'+((b+256)%256).toString(16)).slice(-2)).join('');
 }
+// Zugangsschutz: aktiv, sobald die Script-Property JANE_ZUGANG gesetzt ist.
+// Einrichten/Aufheben nur im Apps-Script-Editor über die beiden Funktionen unten.
+function janeZugangOk_(e){
+  const soll=PropertiesService.getScriptProperties().getProperty('JANE_ZUGANG');
+  if(!soll)return true;
+  const ist=String((e&&e.parameter&&e.parameter.zugang)||'');
+  if(ist.length!==soll.length)return false;
+  let diff=0;
+  for(let i=0;i<soll.length;i++)diff|=soll.charCodeAt(i)^ist.charCodeAt(i);
+  return diff===0;
+}
+function janeZugangEinrichten(){
+  const bytes=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,Utilities.getUuid()+Utilities.getUuid()+Date.now());
+  const schluessel=Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,'').slice(0,32);
+  PropertiesService.getScriptProperties().setProperty('JANE_ZUGANG',schluessel);
+  Logger.log('Zugangsschutz aktiv. Dein Zugangsschlüssel (gut aufheben, in Jane auf Handy und PC eingeben): '+schluessel);
+}
+function janeZugangAnzeigen(){
+  const s=PropertiesService.getScriptProperties().getProperty('JANE_ZUGANG');
+  Logger.log(s?('Aktueller Zugangsschlüssel: '+s):'Zugangsschutz ist nicht aktiv.');
+}
+function janeZugangAufheben(){
+  PropertiesService.getScriptProperties().deleteProperty('JANE_ZUGANG');
+  Logger.log('Zugangsschutz aufgehoben. Jane ist wieder ohne Schlüssel erreichbar.');
+}
 function janeReleaseStatus_(){
-  return {ok:true,backendRevision:'jane-zahlungsneustart-20261019-r3',paymentVersion:1,
+  return {ok:true,backendRevision:'jane-zugangsschutz-20261021-r1',paymentVersion:1,
+    zugangsschutz:!!PropertiesService.getScriptProperties().getProperty('JANE_ZUGANG'),
     writePaused:PropertiesService.getScriptProperties().getProperty('JANE_WRITE_PAUSE')==='true',
     bindingSha256:janeBinding_()};
 }
