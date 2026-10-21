@@ -1066,10 +1066,10 @@ function pdfUebersichtZeile(name,daten){
  const leistung=leistungsWerte(daten),geld=pdfZahlungsWerte(daten);
  const stunden=daten.reduce((sum,e)=>sum+Number(e.stunden||0),0);
  const km=daten.reduce((sum,e)=>sum+Number(e.kilometer||0),0);
- return '<tr><td>'+htmlSicher(name)+'</td><td>'+htmlSicher(format(stunden))+' h</td><td>'+htmlSicher(format(km))+' km</td><td>'+htmlSicher(euro(leistung.sonder.gesamt/100))+'</td><td>'+htmlSicher(euro(geld.gesamt))+'</td><td>'+htmlSicher(euro(geld.bezahlt))+'</td><td>'+htmlSicher(euro(geld.offen))+'</td></tr>';
+ return '<tr><td>'+htmlSicher(name)+'</td><td>'+htmlSicher(format(stunden))+' h</td><td>'+htmlSicher(format(leistung.stunden.mengeBezahlt))+' h</td><td>'+htmlSicher(format(km))+' km</td><td>'+htmlSicher(format(leistung.km.mengeBezahlt))+' km</td><td>'+htmlSicher(euro(leistung.sonder.gesamt/100))+'</td><td>'+htmlSicher(euro(leistung.sonder.bezahlt/100))+'</td><td>'+htmlSicher(euro(geld.gesamt))+'</td><td>'+htmlSicher(euro(geld.bezahlt))+'</td><td>'+htmlSicher(euro(geld.offen))+'</td></tr>';
 }
 function pdfUebersichtTabelle(titel,zeilen,zusatzklasse){
- return '<section class="pdf-uebersicht '+zusatzklasse+'"><h2>'+titel+'</h2><table class="pdf-uebersicht-tabelle"><colgroup><col style="width:18%"><col style="width:12%"><col style="width:12%"><col style="width:16%"><col style="width:14%"><col style="width:14%"><col style="width:14%"></colgroup><thead><tr><th>Zeitraum</th><th>Stunden</th><th>Kilometer</th><th>Sonderleistungen</th><th>Gesamt €</th><th>Bezahlt €</th><th>Offen €</th></tr></thead><tbody>'+zeilen+'</tbody></table></section>';
+ return '<section class="pdf-uebersicht '+zusatzklasse+'"><h2>'+titel+'</h2><table class="pdf-uebersicht-tabelle"><colgroup><col style="width:13%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col style="width:9%"><col style="width:9%"></colgroup><thead><tr><th>Zeitraum</th><th>Stunden</th><th>Bezahlt</th><th>Kilometer</th><th>Bezahlt</th><th>Sonderleistungen</th><th>Bezahlt</th><th>Gesamt €</th><th>Bezahlt €</th><th>Offen €</th></tr></thead><tbody>'+zeilen+'</tbody></table></section>';
 }
 function pdfLeistungsUebersicht(daten){
  return '<h2 class="pdf-gesamt-titel">Gesamtübersicht</h2>'+pdfUebersichtTabelle('Jahresübersicht',pdfUebersichtZeile('Jahr gesamt',daten),'pdf-jahr');
