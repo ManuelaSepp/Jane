@@ -6,7 +6,9 @@ const source=fs.readFileSync(require('node:path').join(__dirname,'app.js'),'utf8
 function fixture(){
  const elements=new Map();
  const element=()=>({value:'',textContent:'',disabled:false,children:[],style:{},dataset:{},classList:{toggle(){}},addEventListener(){},setAttribute(){},append(...xs){this.children.push(...xs)},appendChild(x){this.children.push(x)},replaceChildren(){this.children=[]}});
- const context=vm.createContext({console,Date,URLSearchParams,Set,Map,Number,String,Math,Promise,
+ // Feste "heutige" Zeit (Oktober 2026), damit die Tests nicht vom echten Datum abhängen.
+ class FestesDatum extends Date{constructor(...a){super(...(a.length?a:[2026,9,15,12]))}static now(){return new Date(2026,9,15,12).getTime()}}
+ const context=vm.createContext({console,Date:FestesDatum,URLSearchParams,Set,Map,Number,String,Math,Promise,
   document:{addEventListener(){},getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element},
   localStorage:{getItem(){return null}},confirm:()=>true,
   fetch(){throw Error('Real network writes forbidden in regression tests')},
